@@ -1,0 +1,476 @@
+@import "tailwindcss";
+
+/* --- Base & Reset Style matching original DoLive --- */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  background: linear-gradient(to right, #ffe6f0, #ccffff);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* --- Tim Rơi Lung Linh (Falling Hearts) --- */
+body::before {
+  content: " ";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url('https://i.ibb.co/KxMNHGM/heart.png');
+  background-size: 20px 20px;
+  animation: hearts 10s linear infinite;
+  opacity: 0.2;
+}
+
+@keyframes hearts {
+  0% { background-position: 0 -100px; }
+  100% { background-position: 0 1000px; }
+}
+
+/* --- Container --- */
+.container {
+  max-width: 800px;
+  width: 100%;
+  margin: 20px auto;
+  padding: 30px 24px;
+  background-color: rgba(255, 255, 255, 0.94);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  position: relative;
+  z-index: 10;
+}
+
+/* --- Heading --- */
+h1 {
+  text-align: center;
+  color: #ff3399;
+  margin-top: 0;
+  margin-bottom: 25px;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+/* --- Form --- */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+label {
+  font-weight: bold;
+  color: #333;
+  font-size: 16px;
+}
+
+/* --- Inputs --- */
+select, input[type="text"], input[type="url"], input[type="file"], input[type="password"] {
+  padding: 12px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  width: 100%;
+  background-color: #fff;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+select:focus, input:focus {
+  border-color: #ff66b2;
+  box-shadow: 0 0 5px rgba(255, 102, 178, 0.4);
+  outline: none;
+}
+
+/* --- Button --- */
+button.primary-btn {
+  padding: 14px;
+  font-size: 18px;
+  font-weight: 600;
+  background-color: #ff66b2;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.25s, transform 0.1s;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+button.primary-btn:hover {
+  background-color: #ff3388;
+}
+
+button.stop-btn {
+  padding: 12px;
+  font-size: 16px;
+  font-weight: bold;
+  background-color: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-top: 15px;
+  width: 100%;
+}
+
+button.stop-btn:hover {
+  background-color: #dc2626;
+}
+
+/* --- Input Container (Eye Toggle) --- */
+.input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-container input {
+  width: 100%;
+  padding-right: 42px;
+}
+
+.eye-button {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  color: #777;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.eye-button:hover {
+  color: #333;
+}
+
+/* --- Switch Toggle --- */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #ff3399;
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+/* --- Livestream Info Box --- */
+.livestream-info {
+  background-color: #fff0f5;
+  border: 2px dashed #ff66b2;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  animation: fadeIn 0.4s ease-in-out;
+}
+
+.livestream-info h2 {
+  margin-top: 0;
+  color: #ff3399;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.livestream-info .metric-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px dotted rgba(255, 102, 178, 0.3);
+  font-size: 15px;
+}
+
+.livestream-info .metric-row:last-of-type {
+  border-bottom: none;
+}
+
+.metric-value {
+  font-weight: bold;
+  color: #ff3399;
+  font-family: monospace;
+  font-size: 15px;
+}
+
+/* --- Popup Modal --- */
+.popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.popup-content {
+  background-color: white;
+  padding: 24px;
+  width: 90%;
+  max-width: 320px;
+  border-radius: 14px;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  animation: breath 1.5s ease-in-out infinite alternate;
+}
+
+.popup-content strong {
+  display: block;
+  font-size: 18px;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.popup-content p {
+  color: #555;
+  margin: 10px 0 16px 0;
+  font-size: 15px;
+}
+
+.popup-content button {
+  padding: 8px 22px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.popup-content button:hover {
+  background-color: #0056b3;
+}
+
+@keyframes breath {
+  from { transform: scale(0.98); }
+  to { transform: scale(1.02); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* --- Interactive Animated Envelope for GetKey --- */
+.letter-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 30px auto;
+}
+
+.letter-image {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  cursor: pointer;
+}
+
+.animated-mail {
+  position: absolute;
+  height: 150px;
+  width: 200px;
+  transition: .4s;
+  top: 0;
+}
+
+.animated-mail .body {
+  position: absolute;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 100px 200px;
+  border-color: transparent transparent #e04b9b transparent;
+  z-index: 2;
+}
+
+.animated-mail .top-fold {
+  position: absolute;
+  top: 50px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 50px 100px 0 100px;
+  border-color: #ff66b2 transparent transparent transparent;
+  transform-origin: 50% 0%;
+  transition: transform .4s .4s, z-index .2s .4s;
+  z-index: 2;
+}
+
+.animated-mail .back-fold {
+  position: absolute;
+  bottom: 0;
+  width: 200px;
+  height: 100px;
+  background: #e04b9b;
+  z-index: 0;
+}
+
+.animated-mail .left-fold {
+  position: absolute;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 50px 0 50px 100px;
+  border-color: transparent transparent transparent #d13a89;
+  z-index: 2;
+}
+
+.animated-mail .letter {
+  left: 20px;
+  bottom: 0px;
+  position: absolute;
+  width: 160px;
+  height: 60px;
+  background: white;
+  z-index: 1;
+  overflow: hidden;
+  transition: .4s .2s;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+  font-family: 'Tourney', sans-serif;
+  letter-spacing: 1px;
+  padding: 6px;
+  text-align: center;
+  word-break: break-all;
+}
+
+.shadow {
+  position: absolute;
+  top: 155px;
+  left: 50%;
+  width: 220px;
+  height: 25px;
+  transition: .4s;
+  transform: translateX(-50%);
+  border-radius: 100%;
+  background: radial-gradient(rgba(0,0,0,0.2), transparent, transparent);
+}
+
+.letter-image:hover .animated-mail,
+.letter-image.open .animated-mail {
+  transform: translateY(35px);
+}
+
+.letter-image:hover .top-fold,
+.letter-image.open .top-fold {
+  transition: transform .4s, z-index .2s;
+  transform: rotateX(180deg);
+  z-index: 0;
+}
+
+.letter-image:hover .letter,
+.letter-image.open .letter {
+  height: 130px;
+}
+
+.letter-image:hover .shadow,
+.letter-image.open .shadow {
+  width: 170px;
+}
+
+.key-info {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 15px;
+  color: #555;
+  line-height: 1.6;
+}
+
+.key-link {
+  color: #ff3399;
+  font-weight: bold;
+  text-decoration: underline;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+/* --- Responsive for Mobile --- */
+@media (max-width: 600px) {
+  .container {
+    padding: 20px 16px;
+    margin: 10px;
+    width: calc(100% - 20px);
+  }
+  h1 {
+    font-size: 24px;
+  }
+  button.primary-btn {
+    font-size: 16px;
+    padding: 12px;
+  }
+}
