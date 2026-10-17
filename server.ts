@@ -347,22 +347,25 @@ app.post('/api/stream/stop', (_req: Request, res: Response) => {
 // Start Express server
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production';
+  const distPath = path.resolve(__dirname, 'dist');
 
-  if (!isProduction) {
+  if (isProduction && fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    // Express 5 catch-all middleware for client-side SPA routing
+    app.use((_req, res) => {
+      res.sendFile(path.resolve(distPath, 'index.html'));
+    });
+  } else {
     const { createServer } = await import('vite');
     const vite = await createServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(__dirname, 'dist');
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      
-  app.use((_req, res) => {
-        res.sendFile(path.resolve(distPath, 'index.html'));
-      });
+  }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 DoLive Full-Stack Server running at http://0.0.0.0:${PORT}`);
