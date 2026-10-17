@@ -1,4 +1,4 @@
-FROM node:22-bullseye
+FROM node:22-bookworm-slim
 
 # Install system dependencies including FFmpeg
 RUN apt-get update && apt-get install -y --no-install-recommends \
