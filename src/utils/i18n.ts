@@ -99,6 +99,8 @@ export const translations = {
     successConnected: 'Successfully connected to RTMP server! Stream is running.',
     streamStopped: 'Livestream stopped cleanly.',
     loggedOutMsg: 'Signed out successfully.',
+    rateLimitError: 'Too many failed login attempts! Please wait 10 minutes.',
+    networkError: 'Unable to reach the server. Please check your connection.',
     
     languageSwitch: 'Language / Ngôn ngữ',
   },
@@ -200,6 +202,8 @@ export const translations = {
     successConnected: 'Kết nối máy chủ thành công',
     streamStopped: 'Đã dừng livestream an toàn.',
     loggedOutMsg: 'Đã đăng xuất thành công.',
+    rateLimitError: 'Quá nhiều lần đăng nhập thất bại! Vui lòng đợi 10 phút.',
+    networkError: 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại mạng.',
     
     languageSwitch: 'Ngôn ngữ / Language',
   },

@@ -13,7 +13,7 @@ export interface RTMPPresetInfo {
 
 export const RTMP_PRESETS: Record<RTMPPlatform, string> = {
   fb: 'rtmps://live-api-s.facebook.com:443/rtmp/',
-  yt: 'rtmp://a.rtmp.youtube.com/live2/',
+  yt: 'rtmps://a.rtmp.youtube.com:443/live2/',
   tiktok: 'rtmp://push-rtmp-l1-sg01.tiktokcdn.com/game/',
   twitch: 'rtmp://live.twitch.tv/app/',
   kick: 'rtmps://fa723fc1b171.global-contribute.live-video.net:443/app/',
@@ -32,6 +32,7 @@ export interface StreamConfig {
   repeat: boolean;
   qualityPreset?: 'ultra' | 'balanced' | 'eco';
   videoResolution?: string;
+  isDemoMode?: boolean;
 }
 
 export interface StreamLogItem {
@@ -41,10 +42,14 @@ export interface StreamLogItem {
   message: string;
 }
 
+export type SessionState = 'IDLE' | 'STARTING' | 'LIVE' | 'STOPPING' | 'ERROR' | 'STOPPED';
+
 export interface StreamStatus {
   isStreaming: boolean;
   isConnect: boolean;
   isPaused: boolean;
+  sessionState: SessionState;
+  isDemoMode: boolean;
   msg: string | null;
   frame: number;
   fps: string;
@@ -55,6 +60,7 @@ export interface StreamStatus {
   droppedFrames: number;
   health: 'excellent' | 'good' | 'fair' | 'poor';
   logs: StreamLogItem[];
+  destinationRedacted?: string;
 }
 
 export interface KeyStorage {
@@ -62,6 +68,7 @@ export interface KeyStorage {
   key: string;
   date: string;
   authenticated: boolean;
+  token?: string;
 }
 
 export type Language = 'en' | 'vi';

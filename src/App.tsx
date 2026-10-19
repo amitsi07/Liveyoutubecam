@@ -3,7 +3,7 @@ import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
 import { GetKeyView } from './components/GetKeyView';
 import { StatusDialog } from './components/StatusDialog';
-import { isUserAuthenticated, logoutUser } from './utils/keyHandler';
+import { isUserAuthenticated, logoutUser, verifyServerSession } from './utils/keyHandler';
 import { useStreamSimulator } from './hooks/useStreamSimulator';
 import { Language } from './types/stream';
 import { getTranslation } from './utils/i18n';
@@ -24,9 +24,14 @@ export function App() {
     useStreamSimulator();
 
   useEffect(() => {
-    // Check initial authentication state
+    // Check initial authentication state with server
     if (isUserAuthenticated()) {
       setCurrentRoute('dashboard');
+      verifyServerSession().then((isValid: boolean) => {
+        if (!isValid) {
+          setCurrentRoute('login');
+        }
+      });
     } else {
       setCurrentRoute('login');
     }
@@ -37,7 +42,7 @@ export function App() {
     localStorage.setItem('dolive_lang', newLang);
   };
 
-  // Sync simulator messages to status dialog
+  // Sync status messages to status dialog
   useEffect(() => {
     if (status.msg) {
       setDialogMessage(status.msg);
@@ -49,9 +54,9 @@ export function App() {
     setCurrentRoute('dashboard');
   };
 
-  const handleLogout = () => {
-    stopStream();
-    logoutUser();
+  const handleLogout = async () => {
+    await stopStream();
+    await logoutUser();
     setCurrentRoute('login');
     setDialogMessage(t.loggedOutMsg);
   };

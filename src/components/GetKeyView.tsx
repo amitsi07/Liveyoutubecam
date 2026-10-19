@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getOrGenerateDailyKey, quickDemoLogin, getTodayDateString } from '../utils/keyHandler';
-import { Check, Copy, ArrowLeft, Zap } from 'lucide-react';
+import { fetchServerDailyKey, authenticateWithServer, getTodayDateString } from '../utils/keyHandler';
+import { Check, Copy, ArrowLeft, Zap, Loader2 } from 'lucide-react';
 import { Language } from '../types/stream';
 import { getTranslation } from '../utils/i18n';
 
@@ -21,10 +21,18 @@ export const GetKeyView: React.FC<GetKeyViewProps> = ({
   const [dailyKey, setDailyKey] = useState('');
   const [isOpen, setIsOpen] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
-    const key = getOrGenerateDailyKey();
-    setDailyKey(key);
+    let isMounted = true;
+    fetchServerDailyKey().then((res) => {
+      if (isMounted && res?.key) {
+        setDailyKey(res.key);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleCopyKey = () => {
@@ -41,15 +49,22 @@ export const GetKeyView: React.FC<GetKeyViewProps> = ({
     );
   };
 
-  const handleCopyAndAutoLogin = () => {
-    if (dailyKey) {
-      navigator.clipboard.writeText(dailyKey).catch(() => {});
+  const handleCopyAndAutoLogin = async () => {
+    if (!dailyKey) return;
+    setIsLoggingIn(true);
+    navigator.clipboard.writeText(dailyKey).catch(() => {});
+
+    const res = await authenticateWithServer(dailyKey);
+    setIsLoggingIn(false);
+
+    if (res.success) {
+      onShowMessage(t.loginSuccess);
+      setTimeout(() => {
+        onAutoLogin();
+      }, 300);
+    } else {
+      onShowMessage(res.error || t.invalidKeyError);
     }
-    quickDemoLogin();
-    onShowMessage(t.loginSuccess);
-    setTimeout(() => {
-      onAutoLogin();
-    }, 400);
   };
 
   return (
@@ -110,6 +125,7 @@ export const GetKeyView: React.FC<GetKeyViewProps> = ({
           type="button"
           className="primary-btn"
           onClick={handleCopyKey}
+          disabled={!dailyKey}
           style={{ maxWidth: '340px' }}
         >
           {copied ? <Check size={18} /> : <Copy size={18} />}
@@ -119,6 +135,7 @@ export const GetKeyView: React.FC<GetKeyViewProps> = ({
         <button
           type="button"
           onClick={handleCopyAndAutoLogin}
+          disabled={!dailyKey || isLoggingIn}
           style={{
             background: 'linear-gradient(135deg, #10b981, #059669)',
             color: '#fff',
@@ -127,7 +144,7 @@ export const GetKeyView: React.FC<GetKeyViewProps> = ({
             padding: '12px 20px',
             fontSize: '16px',
             fontWeight: '600',
-            cursor: 'pointer',
+            cursor: !dailyKey || isLoggingIn ? 'not-allowed' : 'pointer',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '8px',
@@ -135,10 +152,11 @@ export const GetKeyView: React.FC<GetKeyViewProps> = ({
             width: '100%',
             justifyContent: 'center',
             boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+            opacity: !dailyKey || isLoggingIn ? 0.7 : 1,
           }}
         >
-          <Zap size={18} />
-          {t.copyAndAutoLogin}
+          {isLoggingIn ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
+          {isLoggingIn ? 'Authenticating...' : t.copyAndAutoLogin}
         </button>
 
         <button

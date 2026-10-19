@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Zap, KeyRound } from 'lucide-react';
-import { checkKey, quickDemoLogin, getTodayDateString } from '../utils/keyHandler';
+import { Eye, EyeOff, Zap, KeyRound, Loader2 } from 'lucide-react';
+import { authenticateWithServer, fetchServerDailyKey, getTodayDateString } from '../utils/keyHandler';
 import { Language } from '../types/stream';
 import { getTranslation } from '../utils/i18n';
 
@@ -20,31 +20,47 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const t = getTranslation(lang);
   const [keyInput, setKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!keyInput.trim()) {
       onShowMessage(t.keyRequired);
       return;
     }
 
-    const result = checkKey(keyInput.trim());
-    const message = result.valid ? t.loginSuccess : t.invalidKeyError;
+    setIsLoading(true);
+    const result = await authenticateWithServer(keyInput.trim());
+    setIsLoading(false);
+
+    const message = t[result.messageKey as keyof typeof t] || result.error || t.invalidKeyError;
     onShowMessage(message);
-    if (result.valid) {
+
+    if (result.success) {
       setTimeout(() => {
         onLoginSuccess();
-      }, 400);
+      }, 300);
     }
   };
 
-  const handleQuickDemoLogin = () => {
-    const demo = quickDemoLogin();
-    setKeyInput(demo.key);
-    onShowMessage(t.loginSuccess);
-    setTimeout(() => {
-      onLoginSuccess();
-    }, 400);
+  const handleQuickDemoLogin = async () => {
+    setIsLoading(true);
+    // Fetch today's valid key from server and authenticate immediately
+    const daily = await fetchServerDailyKey();
+    if (daily && daily.key) {
+      setKeyInput(daily.key);
+      const result = await authenticateWithServer(daily.key);
+      setIsLoading(false);
+      if (result.success) {
+        onShowMessage(t.loginSuccess);
+        setTimeout(() => {
+          onLoginSuccess();
+        }, 300);
+        return;
+      }
+    }
+    setIsLoading(false);
+    onShowMessage(t.invalidKeyError);
   };
 
   return (
@@ -80,6 +96,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 placeholder={t.enterKeyPlaceholder}
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
+                disabled={isLoading}
                 required
               />
               <button
@@ -93,9 +110,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </div>
           </div>
 
-          <button type="submit" className="primary-btn">
-            <KeyRound size={18} />
-            {t.loginButton}
+          <button type="submit" className="primary-btn" disabled={isLoading}>
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
+            {isLoading ? 'Verifying...' : t.loginButton}
           </button>
         </form>
 
@@ -103,6 +120,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           <button
             type="button"
             onClick={handleQuickDemoLogin}
+            disabled={isLoading}
             style={{
               background: 'linear-gradient(135deg, #10b981, #059669)',
               color: '#fff',
@@ -111,12 +129,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
               padding: '10px 16px',
               fontSize: '14px',
               fontWeight: '600',
-              cursor: 'pointer',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
               boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
-              transition: 'transform 0.15s, opacity 0.15s',
+              opacity: isLoading ? 0.7 : 1,
             }}
           >
             <Zap size={16} />

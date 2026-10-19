@@ -1,16 +1,7 @@
 import { KeyStorage } from '../types/stream';
 
-const STORAGE_KEY = 'dolive_key_data';
-
-// Generate 12-character alphanumeric key (A-Z, a-z, 0-9)
-export function generateRandomKey(length: number = 12): string {
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  return result;
-}
+const STORAGE_KEY = 'dolive_auth_session';
+const TOKEN_KEY = 'dolive_auth_token';
 
 export function getTodayDateString(): string {
   const now = new Date();
@@ -20,74 +11,124 @@ export function getTodayDateString(): string {
   return `${year}-${month}-${day}`;
 }
 
-export function loadKeyFromStorage(): KeyStorage | null {
+export function getAuthToken(): string | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as KeyStorage;
+    return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
 }
 
-export function saveKeyToStorage(key: string, authenticated: boolean = false): KeyStorage {
-  const today = getTodayDateString();
-  const data: KeyStorage = {
-    ip: '127.0.0.1',
-    key,
-    date: today,
-    authenticated,
-  };
+export function setAuthToken(token: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    sessionStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function clearAuthToken(): void {
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+// Fetch the server-authoritative daily key from backend
+export async function fetchServerDailyKey(): Promise<{ key: string; date: string } | null> {
+  try {
+    const res = await fetch('/api/auth/daily-key');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.key) {
+        return { key: data.key, date: data.date };
+      }
+    }
   } catch (err) {
-    console.error('Failed to save key in storage:', err);
+    console.warn('Failed to fetch server daily key:', err);
   }
-  return data;
+  return null;
 }
 
-export function getOrGenerateDailyKey(): string {
-  const today = getTodayDateString();
-  const saved = loadKeyFromStorage();
+// Server-authoritative login
+export async function authenticateWithServer(
+  keyInput: string
+): Promise<{ success: boolean; messageKey: string; token?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: keyInput.trim() }),
+    });
 
-  if (saved && saved.date === today && saved.key) {
-    return saved.key;
+    const data = await res.json();
+
+    if (res.ok && data.success && data.token) {
+      setAuthToken(data.token);
+      const sessionData: KeyStorage = {
+        ip: '127.0.0.1',
+        key: keyInput.trim(),
+        date: getTodayDateString(),
+        authenticated: true,
+        token: data.token,
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
+      } catch {
+        // ignore
+      }
+      return { success: true, messageKey: 'loginSuccess', token: data.token };
+    }
+
+    if (res.status === 429) {
+      return { success: false, messageKey: 'rateLimitError', error: data.message };
+    }
+
+    return { success: false, messageKey: 'invalidKeyError', error: data.message };
+  } catch (err: any) {
+    return { success: false, messageKey: 'networkError', error: err.message };
   }
-
-  // Generate a new key for today
-  const newKey = generateRandomKey(12);
-  saveKeyToStorage(newKey, false);
-  return newKey;
 }
 
-export function isKeyValidForToday(date: string): boolean {
-  return date === getTodayDateString();
-}
+// Check session validity with server
+export async function verifyServerSession(): Promise<boolean> {
+  const token = getAuthToken();
+  if (!token) return false;
 
-export function checkKey(inputKey: string): { valid: boolean; msgKey: string } {
-  const currentDailyKey = getOrGenerateDailyKey();
-
-  if (inputKey.trim() === currentDailyKey.trim()) {
-    saveKeyToStorage(currentDailyKey, true);
-    return { valid: true, msgKey: 'loginSuccess' };
+  try {
+    const res = await fetch('/api/auth/verify', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return Boolean(data.authenticated);
+    }
+  } catch {
+    // network issue
   }
-
-  return { valid: false, msgKey: 'invalidKeyError' };
+  return false;
 }
 
+// Synchronous check for initial render (verified immediately by async effect)
 export function isUserAuthenticated(): boolean {
-  const saved = loadKeyFromStorage();
-  if (!saved) return false;
-  return Boolean(saved.authenticated && isKeyValidForToday(saved.date));
+  return Boolean(getAuthToken());
 }
 
-export function quickDemoLogin(): { key: string; valid: boolean } {
-  const currentDailyKey = getOrGenerateDailyKey();
-  saveKeyToStorage(currentDailyKey, true);
-  return { key: currentDailyKey, valid: true };
-}
-
-export function logoutUser(): void {
-  const currentKey = getOrGenerateDailyKey();
-  saveKeyToStorage(currentKey, false);
+export async function logoutUser(): Promise<void> {
+  const token = getAuthToken();
+  if (token) {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // ignore network errors on logout
+    }
+  }
+  clearAuthToken();
 }

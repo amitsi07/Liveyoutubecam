@@ -20,6 +20,7 @@ RUN npm run build
 
 # Expose port (Render/Railway injects PORT environment variable)
 ENV PORT=3000
+ENV NODE_ENV=production
 EXPOSE 3000
 
 # Start full-stack server

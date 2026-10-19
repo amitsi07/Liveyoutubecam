@@ -26,6 +26,7 @@ import {
   Language,
 } from '../types/stream';
 import { getTranslation } from '../utils/i18n';
+import { getAuthToken } from '../utils/keyHandler';
 
 interface DashboardViewProps {
   lang: Language;
@@ -41,19 +42,14 @@ interface DashboardViewProps {
 
 const SAMPLE_VIDEOS = [
   {
-    name: 'sampleNature',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    title: '🌊 Nature HD',
+    name: 'sampleBunny',
+    url: 'https://archive.org/download/BigBuckBunny_328/BigBuckBunny_512kb.mp4',
+    title: '🐰 Big Buck Bunny (10 min)',
   },
   {
-    name: 'sampleCity',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    title: '🌆 City Showcase',
-  },
-  {
-    name: 'sampleCountdown',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    title: '⏱️ Animation Live',
+    name: 'sampleFlower',
+    url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+    title: '🌸 Nature Garden (HD)',
   },
 ];
 
@@ -77,8 +73,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [videoFileName, setVideoFileName] = useState<string>('');
   const [rtmpChoice, setRtmpChoice] = useState<RTMPPlatform>('yt');
   const [customRtmpUrl, setCustomRtmpUrl] = useState('');
-  const [streamKey, setStreamKey] = useState('live_92837482_demoKeyPass');
+  const [streamKey, setStreamKey] = useState('');
   const [showStreamKey, setShowStreamKey] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [repeat, setRepeat] = useState(true);
   const [qualityPreset, setQualityPreset] = useState<'ultra' | 'balanced' | 'eco'>('ultra');
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -94,9 +91,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       return;
     }
     try {
+      const token = getAuthToken();
       const res = await fetch('/api/keepalive/set-url', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ url: renderUrlInput.trim() }),
       });
       if (res.ok) {
@@ -161,49 +162,122 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   }, [status.isStreaming, status.isPaused]);
 
-  // Handle local video file upload
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Sync HTML5 video element with pause/resume state
+  useEffect(() => {
+    if (!videoPlayerRef.current) return;
+    if (status.isPaused) {
+      videoPlayerRef.current.pause();
+    } else if (status.isStreaming) {
+      videoPlayerRef.current.play().catch(() => {});
+    }
+  }, [status.isPaused, status.isStreaming]);
+
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+
+  // Handle local video file upload with real transfer to server
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const blobUrl = URL.createObjectURL(file);
       setVideoBlobUrl(blobUrl);
       setVideoFileName(file.name);
       setVideoFilePath(file.name);
-      onShowMessage(
+      setIsUploading(true);
+      setUploadProgress(
         lang === 'en'
-          ? `Selected video: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
-          : `Đã chọn video: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+          ? `Uploading to server (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`
+          : `Đang tải lên máy chủ (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`
       );
+
+      try {
+        const token = getAuthToken();
+        const uploadUrl = `/api/upload?filename=${encodeURIComponent(file.name)}`;
+        const res = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: file,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.filePath) {
+            setVideoFilePath(data.filePath);
+            setUploadProgress(
+              lang === 'en'
+                ? `Uploaded & ready to stream: ${file.name}`
+                : `Đã tải lên máy chủ: ${file.name}`
+            );
+            onShowMessage(
+              lang === 'en'
+                ? `Video uploaded to server! (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+                : `Đã tải video lên máy chủ! (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+            );
+          }
+        } else {
+          setUploadProgress(null);
+          onShowMessage(lang === 'en' ? 'Upload failed' : 'Tải lên máy chủ thất bại');
+        }
+      } catch (err: any) {
+        console.error('Upload error:', err);
+        setUploadProgress(null);
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
   const handleSelectSample = (sample: typeof SAMPLE_VIDEOS[0]) => {
-    if (videoSource === 'file') {
-      setVideoFilePath(sample.title);
-      setVideoBlobUrl(sample.url);
-      setVideoFileName(sample.title);
-    } else {
-      setVideoUrl(sample.url);
-    }
+    setVideoSource('url');
+    setVideoUrl(sample.url);
     onShowMessage(
       lang === 'en'
-        ? `Loaded sample: ${sample.title}`
-        : `Đã nạp video mẫu: ${sample.title}`
+        ? `Loaded sample video: ${sample.title}. Ready to stream!`
+        : `Đã nạp video mẫu: ${sample.title}. Sẵn sàng phát!`
     );
   };
 
   const handleUseDemoKey = () => {
-    const randomKey = `live_${Math.random().toString(36).substring(2, 10)}_stream`;
+    const randomKey = `demo_live_${Math.random().toString(36).substring(2, 8)}_preview`;
     setStreamKey(randomKey);
+    setIsDemoMode(true);
     onShowMessage(
       lang === 'en'
-        ? 'Generated test stream key!'
-        : 'Đã tạo Stream Key thử nghiệm!'
+        ? 'Generated Demo Key! 🧪 Demo / Preview Mode is active. Click "Start Livestream" to test with live audio/visualizer without needing a real YouTube key.'
+        : 'Đã tạo Stream Key thử nghiệm! 🧪 Chế độ Demo / Xem trước đang bật. Nhấn "Bắt đầu phát trực tiếp" để thử nghiệm không cần key thật.'
     );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (videoSource === 'file' && isUploading) {
+      onShowMessage(
+        lang === 'en'
+          ? 'Video is still uploading to server. Please wait a moment...'
+          : 'Video đang được tải lên máy chủ. Vui lòng đợi trong giây lát...'
+      );
+      return;
+    }
+
+    if (videoSource === 'file' && !videoFileName && !videoFilePath) {
+      onShowMessage(
+        lang === 'en'
+          ? 'Please click "Choose File" to select and upload your video first!'
+          : 'Vui lòng nhấn "Chọn tệp" để tải video lên máy chủ trước!'
+      );
+      return;
+    }
+
+    const isDemo =
+      isDemoMode ||
+      streamKey.startsWith('demo_') ||
+      streamKey.startsWith('live_') ||
+      streamKey.includes('_stream') ||
+      streamKey.includes('_preview');
 
     const config: StreamConfig = {
       videoSource,
@@ -216,6 +290,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       streamKey,
       repeat,
       qualityPreset,
+      isDemoMode: isDemo,
     };
 
     const res = await onStartStream(config);
@@ -742,7 +817,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <Upload size={16} /> {t.chooseFileBtn}
                   </button>
                 </div>
-                {videoFileName && (
+                {isUploading && (
+                  <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    ⏳ {uploadProgress}
+                  </span>
+                )}
+                {!isUploading && uploadProgress && (
+                  <span style={{ fontSize: '12px', color: '#059669', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <CheckCircle size={14} /> {uploadProgress}
+                  </span>
+                )}
+                {!isUploading && !uploadProgress && videoFileName && (
                   <span style={{ fontSize: '12px', color: '#059669', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <CheckCircle size={14} /> Ready to stream: {videoFileName}
                   </span>
@@ -761,6 +846,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   onChange={(e) => setVideoUrl(e.target.value)}
                   required
                 />
+                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>
+                  ℹ️ <strong>Direct Video URL needed</strong> (.mp4, .m3u8, .flv). Social media web links (like facebook.com/share/...) cannot be decoded directly by FFmpeg. Or choose a <strong>Sample Video</strong> below.
+                </div>
               </div>
             )}
 
@@ -826,8 +914,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {/* Stream Key with Password Toggle & Demo Key Generator */}
           <div className="section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label htmlFor="stream_key">{t.streamKeyLabel}</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label htmlFor="stream_key" style={{ margin: 0 }}>{t.streamKeyLabel}</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextMode = !isDemoMode;
+                    setIsDemoMode(nextMode);
+                    if (nextMode && !streamKey) {
+                      setStreamKey(`demo_live_${Math.random().toString(36).substring(2, 8)}_preview`);
+                    }
+                  }}
+                  style={{
+                    background: isDemoMode ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 51, 153, 0.1)',
+                    color: isDemoMode ? '#059669' : '#ff3399',
+                    border: `1px solid ${isDemoMode ? '#10b981' : '#ff99cc'}`,
+                    borderRadius: '12px',
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                  }}
+                  title="Click to toggle between real broadcast and safe demo testing"
+                >
+                  {isDemoMode ? '🧪 Demo / Preview Mode' : '🔴 Real Broadcast Mode'}
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={handleUseDemoKey}
@@ -851,9 +965,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 type={showStreamKey ? 'text' : 'password'}
                 id="stream_key"
                 name="stream_key"
-                placeholder={t.streamKeyPlaceholder}
+                placeholder={isDemoMode ? 'demo_live_preview_key' : t.streamKeyPlaceholder}
                 value={streamKey}
-                onChange={(e) => setStreamKey(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setStreamKey(val);
+                  if (val && !val.startsWith('demo_') && !val.includes('_stream') && !val.includes('_preview')) {
+                    setIsDemoMode(false);
+                  }
+                }}
                 required
               />
               <button
@@ -865,6 +985,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {showStreamKey ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+
+            {isDemoMode ? (
+              <div style={{ fontSize: '12px', color: '#059669', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <CheckCircle size={13} />
+                <span>
+                  {lang === 'en'
+                    ? '🧪 Demo Mode: Local preview with live audio/visualizer. To broadcast to YouTube, paste your real key from YouTube Studio.'
+                    : '🧪 Chế độ Demo: Xem trước cục bộ với audio/visualizer. Để phát lên YouTube, hãy dán key thật từ YouTube Studio.'}
+                </span>
+              </div>
+            ) : (
+              <div style={{ fontSize: '11px', color: '#777', marginTop: '4px' }}>
+                ℹ️ {lang === 'en' ? 'Requires a valid stream key from your streaming platform.' : 'Yêu cầu Stream Key hợp lệ từ nền tảng phát sóng của bạn.'}
+              </div>
+            )}
           </div>
 
           {/* Stream Quality Preset & Bandwidth Optimizer */}
