@@ -77,12 +77,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [showStreamKey, setShowStreamKey] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [repeat, setRepeat] = useState(true);
-  const [qualityPreset, setQualityPreset] = useState<'ultra' | 'balanced' | 'eco'>('ultra');
+  const [qualityPreset, setQualityPreset] = useState<'ultra' | 'balanced' | 'eco'>('balanced');
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showRenderModal, setShowRenderModal] = useState(false);
   const [renderUrlInput, setRenderUrlInput] = useState(() => localStorage.getItem('dolive_render_url') || '');
   const [keepAliveStatus, setKeepAliveStatus] = useState<string | null>(null);
-  const [showLogs, setShowLogs] = useState(false);
+  const [showLogs, setShowLogs] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
 
   const handleActivateKeepAlive = async () => {
@@ -1057,20 +1057,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               value={qualityPreset}
               onChange={(e) => setQualityPreset(e.target.value as 'ultra' | 'balanced' | 'eco')}
             >
-              <option value="ultra">
-                {lang === 'en'
-                  ? '🚀 Ultra Direct (Original Quality / 0% Server CPU Overhead)'
-                  : '🚀 Ultra Direct (Chất lượng gốc / 0% CPU máy chủ)'}
-              </option>
               <option value="balanced">
                 {lang === 'en'
-                  ? '⚖️ Balanced (720p 30fps / 2500 kbps - Recommended)'
-                  : '⚖️ Cân bằng (720p 30fps / 2500 kbps - Khuyên dùng)'}
+                  ? '⚖️ Balanced / Anti-Buffer (720p 30fps Zero-Latency - Recommended)'
+                  : '⚖️ Cân bằng / Chống giật (720p 30fps Zero-Latency - Khuyên dùng)'}
               </option>
               <option value="eco">
                 {lang === 'en'
-                  ? '🍃 Eco 24/7 Saver (1200 kbps - Saves 60% Bandwidth on Render Free Tier)'
-                  : '🍃 Tiết kiệm Eco 24/7 (1200 kbps - Tiết kiệm 60% dung lượng)'}
+                  ? '🍃 Eco Saver (480p 1000 kbps - Super Smooth for Low Bandwidth)'
+                  : '🍃 Tiết kiệm Eco (480p 1000 kbps - Siêu mượt cho mạng yếu)'}
+              </option>
+              <option value="ultra">
+                {lang === 'en'
+                  ? '🚀 Ultra Direct Copy (Original Bitrate - High Bandwidth / May Buffer)'
+                  : '🚀 Ultra Direct Copy (Chất lượng gốc - Băng thông cao)'}
               </option>
             </select>
           </div>
@@ -1110,6 +1110,106 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </form>
       </div>
+
+      {/* Terminal Console Logs Section (Persistent after stop or crash) */}
+      {!status.isStreaming && status.logs.length > 0 && (
+        <div style={{ marginTop: '16px', background: '#fff', borderRadius: '12px', padding: '14px', border: '1px solid #ffd6e8', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showLogs ? '10px' : '0', flexWrap: 'wrap', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => setShowLogs(!showLogs)}
+              style={{
+                background: 'none',
+                border: '1px solid #ff66b2',
+                color: '#ff3399',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <Terminal size={14} />
+              Recent Terminal Logs ({status.logs.length})
+            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={handleDownloadLogs}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#2563eb',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                  fontWeight: '600',
+                }}
+              >
+                <Download size={13} /> {t.downloadLogsBtn}
+              </button>
+              <button
+                type="button"
+                onClick={onClearLogs}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#dc2626',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                  fontWeight: '600',
+                }}
+              >
+                <Trash2 size={13} /> {t.clearLogsBtn}
+              </button>
+            </div>
+          </div>
+
+          {showLogs && (
+            <div
+              style={{
+                backgroundColor: '#111827',
+                color: '#10b981',
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                padding: '12px',
+                borderRadius: '8px',
+                maxHeight: '220px',
+                overflowY: 'auto',
+                border: '1px solid #374151',
+              }}
+            >
+              {status.logs.map((log) => (
+                <div
+                  key={log.id}
+                  style={{
+                    padding: '2px 0',
+                    color:
+                      log.level === 'error'
+                        ? '#f87171'
+                        : log.level === 'warn'
+                        ? '#fbbf24'
+                        : log.level === 'success'
+                        ? '#34d399'
+                        : '#93c5fd',
+                  }}
+                >
+                  <span style={{ color: '#6b7280' }}>[{log.timestamp}]</span> {log.message}
+                </div>
+              ))}
+              <div ref={logsEndRef} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Stream Key Help Modal */}
       {showHelpModal && (

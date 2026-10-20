@@ -68,7 +68,7 @@ export function useStreamManager() {
 
   // Poll server state while real streaming is active
   useEffect(() => {
-    if (status.isStreaming && !status.isDemoMode && isServerActive) {
+    if (status.isStreaming && !status.isDemoMode) {
       const pollServerStatus = async () => {
         try {
           const token = getAuthToken();
@@ -77,9 +77,10 @@ export function useStreamManager() {
           });
 
           if (res.ok) {
+            setIsServerActive(true);
             const data = await res.json();
 
-            // If server FFmpeg is running, update live metrics from real process
+            // If server FFmpeg is running, update live metrics and logs from real process
             if (data.isRealFFmpegRunning) {
               const currentHealth =
                 data.speed && parseFloat(data.speed) < 0.8
@@ -100,11 +101,11 @@ export function useStreamManager() {
                 health: currentHealth,
                 destinationRedacted: data.destinationRedacted,
                 logs:
-                  data.logs && data.logs.length > 0
+                  data.logs && Array.isArray(data.logs) && data.logs.length > 0
                     ? data.logs.map((l: any, idx: number) => ({
                         id: `srv-${idx}-${l.timestamp}`,
                         timestamp: l.timestamp,
-                        level: l.level,
+                        level: l.level || 'info',
                         message: l.message,
                       }))
                     : prev.logs,
@@ -122,11 +123,11 @@ export function useStreamManager() {
                 sessionState: data.error ? 'ERROR' : 'STOPPED',
                 msg: failureMsg,
                 logs:
-                  data.logs && data.logs.length > 0
+                  data.logs && Array.isArray(data.logs) && data.logs.length > 0
                     ? data.logs.map((l: any, idx: number) => ({
                         id: `srv-err-${idx}`,
                         timestamp: l.timestamp,
-                        level: l.level,
+                        level: l.level || 'info',
                         message: l.message,
                       }))
                     : prev.logs,
@@ -148,7 +149,7 @@ export function useStreamManager() {
         timerRef.current = null;
       }
     };
-  }, [status.isStreaming, status.isDemoMode, isServerActive]);
+  }, [status.isStreaming, status.isDemoMode]);
 
   const prevStreamingRef = useRef(status.isStreaming);
   useEffect(() => {

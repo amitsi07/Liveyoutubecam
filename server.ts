@@ -678,17 +678,25 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
   // Quality & Encoding configurations
   // NOTE: YouTube Live strictly enforces 2-second keyframes (-g 60 for 30fps).
   if (qualityPreset === 'eco') {
-    // 720p / 1200 kbps: Low resource consumption for Render Free tier
+    // 480p / 1000 kbps: Ultra-low resource consumption for Render Free tier
     ffmpegArgs.push(
+      '-vf', "scale='min(854,iw)':-2",
+      '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-b:v', '1200k',
-      '-maxrate', '1500k',
-      '-bufsize', '2400k',
+      '-tune', 'zerolatency',
+      '-pix_fmt', 'yuv420p',
+      '-b:v', '1000k',
+      '-minrate', '1000k',
+      '-maxrate', '1200k',
+      '-bufsize', '2000k',
       '-g', '60',
+      '-keyint_min', '60',
+      '-sc_threshold', '0',
       '-c:a', 'aac',
       '-b:a', '96k',
-      '-ar', '44100'
+      '-ar', '44100',
+      '-ac', '2'
     );
   } else if (qualityPreset === 'ultra') {
     // Ultra Direct Copy: minimal CPU overhead when source is already compliant H.264
@@ -699,17 +707,25 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
       '-ar', '44100'
     );
   } else {
-    // Balanced (Default): 720p / 2500 kbps, robust re-encoding
+    // Balanced (Anti-Buffering Default): 720p 30fps CBR, Zero-Latency, strict 2s keyframes
     ffmpegArgs.push(
+      '-vf', "scale='min(1280,iw)':-2",
+      '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-b:v', '2500k',
-      '-maxrate', '3000k',
-      '-bufsize', '5000k',
+      '-tune', 'zerolatency',
+      '-pix_fmt', 'yuv420p',
+      '-b:v', '2000k',
+      '-minrate', '1800k',
+      '-maxrate', '2200k',
+      '-bufsize', '3000k',
       '-g', '60',
+      '-keyint_min', '60',
+      '-sc_threshold', '0',
       '-c:a', 'aac',
       '-b:a', '128k',
-      '-ar', '44100'
+      '-ar', '44100',
+      '-ac', '2'
     );
   }
 
@@ -762,21 +778,23 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
           if (bitrateMatch) streamState.bitrate = bitrateMatch[1];
           if (speedMatch) streamState.speed = `${speedMatch[1]}x`;
 
-          // Periodic telemetry log every ~120 frames
-          if (streamState.frame % 120 === 0) {
+          // Live telemetry log every ~30 frames (~1 second)
+          if (streamState.frame > 0 && streamState.frame % 30 === 0) {
             addServerLog(
-              `[Telemetry] frame=${streamState.frame} fps=${streamState.fps} time=${streamState.time} bitrate=${streamState.bitrate} speed=${streamState.speed}`,
+              `[Live Stream] frame=${streamState.frame} | fps=${streamState.fps} | time=${streamState.time} | bitrate=${streamState.bitrate} | speed=${streamState.speed}`,
               'info'
             );
           }
         } else if (trimmed.includes('Stream mapping:')) {
           streamState.sessionState = 'LIVE';
           addServerLog(`[Handshake] RTMP Server Connection Accepted! Stream mapping OK.`, 'success');
-        } else if (trimmed.includes('Error') || trimmed.includes('Connection refused') || trimmed.includes('Server error')) {
+        } else if (trimmed.includes('Output #0') || trimmed.includes('Stream #0') || trimmed.includes('Input #0')) {
+          addServerLog(`[FFmpeg] ${trimmed}`, 'info');
+        } else if (trimmed.includes('Error') || trimmed.includes('Connection refused') || trimmed.includes('Server error') || trimmed.includes('failed')) {
           addServerLog(`[Error] ${trimmed}`, 'error');
           streamState.error = trimmed;
-        } else if (trimmed.includes('Opening')) {
-          addServerLog(trimmed, 'info');
+        } else if (trimmed.includes('Opening') || trimmed.includes('Duration:') || trimmed.includes('Metadata:')) {
+          addServerLog(`[FFmpeg] ${trimmed}`, 'info');
         }
       }
     });
