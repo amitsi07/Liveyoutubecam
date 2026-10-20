@@ -602,6 +602,11 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
 
     inputSource = normalizedFile;
   } else {
+    // If URL has no protocol scheme, default to https://
+    if (!inputSource.startsWith('http://') && !inputSource.startsWith('https://')) {
+      inputSource = `https://${inputSource}`;
+    }
+
     // Validate Remote Video URL against SSRF and illegal protocols
     const urlValidation = validateRemoteUrl(inputSource);
     if (!urlValidation.valid) {

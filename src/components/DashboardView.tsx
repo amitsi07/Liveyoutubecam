@@ -162,15 +162,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   }, [status.isStreaming, status.isPaused]);
 
-  // Sync HTML5 video element with pause/resume state
+  // Sync HTML5 video element with pause/resume state and mute state
   useEffect(() => {
     if (!videoPlayerRef.current) return;
+    videoPlayerRef.current.muted = isMuted;
     if (status.isPaused) {
       videoPlayerRef.current.pause();
     } else if (status.isStreaming) {
       videoPlayerRef.current.play().catch(() => {});
     }
-  }, [status.isPaused, status.isStreaming]);
+  }, [status.isPaused, status.isStreaming, isMuted]);
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadPercent, setUploadPercent] = useState<number>(0);
@@ -310,6 +311,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       return;
     }
 
+    if (videoSource === 'url') {
+      const trimmedUrl = videoUrl.trim().toLowerCase();
+      const isWebPage =
+        (trimmedUrl.includes('youtube.com/watch') ||
+          trimmedUrl.includes('youtu.be/') ||
+          trimmedUrl.includes('facebook.com/') ||
+          trimmedUrl.includes('fb.watch/')) &&
+        !trimmedUrl.includes('.mp4') &&
+        !trimmedUrl.includes('.m3u8') &&
+        !trimmedUrl.includes('.flv');
+
+      if (isWebPage) {
+        onShowMessage(
+          lang === 'en'
+            ? 'Webpage URLs (like youtube.com/watch or facebook.com) cannot be decoded directly by FFmpeg. Please provide a direct media link (.mp4, .m3u8, .flv), upload a video file, or test with a Sample Video below.'
+            : 'Link trang web (như youtube.com/watch hoặc facebook.com) không thể giải mã trực tiếp. Vui lòng dùng link video trực tiếp (.mp4, .m3u8), tải tệp lên hoặc chọn Video mẫu bên dưới.'
+        );
+        return;
+      }
+    }
+
     const isDemo =
       isDemoMode ||
       streamKey.startsWith('demo_') ||
@@ -369,7 +391,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Video source for preview player
   const currentVideoPreviewSrc =
     videoSource === 'file'
-      ? videoBlobUrl || (videoFilePath.startsWith('http') ? videoFilePath : SAMPLE_VIDEOS[0].url)
+      ? videoBlobUrl ||
+        (videoFilePath.startsWith('http') || videoFilePath.startsWith('/')
+          ? videoFilePath
+          : SAMPLE_VIDEOS[0].url)
       : videoUrl || SAMPLE_VIDEOS[0].url;
 
   return (
