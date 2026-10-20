@@ -14,8 +14,22 @@ body {
   position: relative;
   overflow-x: hidden;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  justify-content: flex-start;
   align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 8px;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 /* --- Tim Rơi Lung Linh (Falling Hearts) --- */
@@ -43,13 +57,16 @@ body::before {
 .container {
   max-width: 800px;
   width: 100%;
-  margin: 20px auto;
-  padding: 30px 24px;
-  background-color: rgba(255, 255, 255, 0.94);
+  margin: 10px auto;
+  padding: 24px 18px;
+  background-color: rgba(255, 255, 255, 0.96);
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   position: relative;
   z-index: 10;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  min-width: 0;
 }
 
 /* --- Heading --- */
@@ -461,16 +478,29 @@ input:checked + .slider:before {
 
 /* --- Responsive for Mobile --- */
 @media (max-width: 600px) {
+  #root {
+    padding: 4px;
+  }
   .container {
-    padding: 20px 16px;
-    margin: 10px;
-    width: calc(100% - 20px);
+    padding: 16px 12px;
+    margin: 4px auto;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 12px;
   }
   h1 {
-    font-size: 24px;
+    font-size: 20px;
+    margin-bottom: 16px;
+  }
+  label {
+    font-size: 14px;
+  }
+  select, input[type="text"], input[type="url"], input[type="password"] {
+    padding: 10px 8px;
+    font-size: 14px;
   }
   button.primary-btn {
-    font-size: 16px;
+    font-size: 15px;
     padding: 12px;
   }
 }

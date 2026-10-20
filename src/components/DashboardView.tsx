@@ -77,7 +77,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [showStreamKey, setShowStreamKey] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [repeat, setRepeat] = useState(true);
-  const [qualityPreset, setQualityPreset] = useState<'fhd' | 'balanced' | 'hd' | 'eco' | 'ultra'>('fhd');
+  const [qualityPreset, setQualityPreset] = useState<'fhd' | 'balanced' | 'hd' | 'eco' | 'ultra'>('ultra');
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showRenderModal, setShowRenderModal] = useState(false);
   const [renderUrlInput, setRenderUrlInput] = useState(() => localStorage.getItem('dolive_render_url') || '');
@@ -1082,30 +1082,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               value={qualityPreset}
               onChange={(e) => setQualityPreset(e.target.value as 'fhd' | 'balanced' | 'hd' | 'eco' | 'ultra')}
             >
-              <option value="fhd">
+              <option value="ultra">
                 {lang === 'en'
-                  ? '🏆 1080p Full HD (6,000 Kbps - YouTube Recommended for 1080p)'
-                  : '🏆 1080p Full HD (6,000 Kbps - YouTube Khuyên dùng cho 1080p)'}
-              </option>
-              <option value="balanced">
-                {lang === 'en'
-                  ? '⚖️ 1080p Standard (4,500 Kbps - YouTube 1080p 30fps Standard)'
-                  : '⚖️ 1080p Tiêu chuẩn (4,500 Kbps - Chuẩn YouTube 1080p)'}
-              </option>
-              <option value="hd">
-                {lang === 'en'
-                  ? '🌟 720p HD (3,000 Kbps - YouTube Recommended for 720p)'
-                  : '🌟 720p HD (3,000 Kbps - YouTube Khuyên dùng cho 720p)'}
+                  ? '⚡ Fast Direct Stream (0% CPU / Zero Buffering on Free Tier - Recommended)'
+                  : '⚡ Phát trực tiếp siêu nhanh (0% CPU / Chống giật trên Free Tier - Khuyên dùng)'}
               </option>
               <option value="eco">
                 {lang === 'en'
-                  ? '🍃 720p Eco (1,800 Kbps - Low Bandwidth / Weak Connection)'
-                  : '🍃 720p Tiết kiệm Eco (1,800 Kbps - Dành cho mạng yếu)'}
+                  ? '🍃 480p Eco Saver (Lightweight Re-encode - For Low-CPU Server)'
+                  : '🍃 480p Tiết kiệm Eco (Mã hóa nhẹ - Dành cho CPU yếu)'}
               </option>
-              <option value="ultra">
+              <option value="hd">
                 {lang === 'en'
-                  ? '🚀 Ultra Direct Copy (Original Source Quality / No Re-encode)'
-                  : '🚀 Ultra Direct Copy (Chất lượng gốc / Không mã hóa lại)'}
+                  ? '🌟 720p HD (3,000 Kbps - YouTube 720p Standard)'
+                  : '🌟 720p HD (3,000 Kbps - Chuẩn YouTube 720p)'}
+              </option>
+              <option value="balanced">
+                {lang === 'en'
+                  ? '⚖️ 1080p Standard (4,500 Kbps - YouTube 1080p Standard)'
+                  : '⚖️ 1080p Tiêu chuẩn (4,500 Kbps - Chuẩn YouTube 1080p)'}
+              </option>
+              <option value="fhd">
+                {lang === 'en'
+                  ? '🏆 1080p Full HD (6,000 Kbps - High CPU Servers)'
+                  : '🏆 1080p Full HD (6,000 Kbps - Cần CPU mạnh)'}
               </option>
             </select>
           </div>

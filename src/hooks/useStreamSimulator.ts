@@ -52,7 +52,7 @@ export function useStreamManager() {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
 
-  // Check backend server health on mount
+  // Check backend server health and restore active streaming state on mount
   useEffect(() => {
     fetch('/health')
       .then((res) => res.json())
@@ -64,6 +64,59 @@ export function useStreamManager() {
       .catch(() => {
         setIsServerActive(false);
       });
+
+    // Check if a livestream is already running on the server to restore Stop/Pause controls
+    const syncServerState = async () => {
+      try {
+        const token = getAuthToken();
+        const res = await fetch('/api/stream/status', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isRealFFmpegRunning || data.isStreaming) {
+            setIsServerActive(true);
+            const currentHealth =
+              data.speed && parseFloat(data.speed) < 0.8
+                ? 'poor'
+                : data.bitrate && data.bitrate !== '0 kbits/s'
+                ? 'excellent'
+                : 'good';
+
+            setStatus((prev) => ({
+              ...prev,
+              isStreaming: true,
+              isDemoMode: false,
+              sessionState: data.sessionState || 'LIVE',
+              frame: data.frame || 0,
+              fps: data.fps || '--',
+              time: data.time || '00:00:00',
+              size: data.size || '0 MB',
+              bitrate: data.bitrate || '--',
+              speed: data.speed || '--',
+              health: currentHealth,
+              destinationRedacted: data.destinationRedacted,
+              logs:
+                data.logs && Array.isArray(data.logs) && data.logs.length > 0
+                  ? data.logs.map((l: any, idx: number) => ({
+                      id: `srv-${idx}-${l.timestamp}`,
+                      timestamp: l.timestamp,
+                      level: l.level || 'info',
+                      message: l.message,
+                    }))
+                  : prev.logs,
+            }));
+          }
+        }
+      } catch {
+        // ignore background status check errors
+      }
+    };
+
+    syncServerState();
+    // Also periodically check every 4 seconds when idle to detect remote streams
+    const idleSyncInterval = setInterval(syncServerState, 4000);
+    return () => clearInterval(idleSyncInterval);
   }, []);
 
   // Poll server state while real streaming is active
