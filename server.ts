@@ -674,27 +674,79 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
     );
   }
 
-  // Real-time pacing flag
-  ffmpegArgs.push('-re');
+  // Pre-input pacing and queueing to avoid packet drops
+  ffmpegArgs.push(
+    '-thread_queue_size', '2048',
+    '-re',
+    '-fflags', '+genpts'
+  );
 
   // Input file
   ffmpegArgs.push('-i', inputSource);
 
+  // Synchronization flags across loops to prevent frame drops and timestamp drift
+  ffmpegArgs.push(
+    '-avoid_negative_ts', 'make_zero',
+    '-vsync', '1'
+  );
+
   // Quality & Encoding configurations
   // NOTE: YouTube Live strictly enforces 2-second keyframes (-g 60 for 30fps).
-  if (qualityPreset === 'eco') {
-    // 480p / 1000 kbps: Ultra-low resource consumption for Render Free tier
+  if (qualityPreset === 'fhd') {
+    // 1080p Full HD (6,000 Kbps) - Matches YouTube Studio 6800 kbps recommendation
     ffmpegArgs.push(
-      '-vf', "scale='min(854,iw)':-2",
+      '-vf', "scale='min(1920,iw)':-2",
       '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
       '-pix_fmt', 'yuv420p',
-      '-b:v', '1000k',
-      '-minrate', '1000k',
-      '-maxrate', '1200k',
-      '-bufsize', '2000k',
+      '-b:v', '6000k',
+      '-minrate', '5500k',
+      '-maxrate', '6500k',
+      '-bufsize', '12000k',
+      '-g', '60',
+      '-keyint_min', '60',
+      '-sc_threshold', '0',
+      '-c:a', 'aac',
+      '-b:a', '160k',
+      '-ar', '44100',
+      '-ac', '2'
+    );
+  } else if (qualityPreset === 'hd') {
+    // 720p HD (3,000 Kbps) - YouTube 720p Standard
+    ffmpegArgs.push(
+      '-vf', "scale='min(1280,iw)':-2",
+      '-r', '30',
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-tune', 'zerolatency',
+      '-pix_fmt', 'yuv420p',
+      '-b:v', '3000k',
+      '-minrate', '2800k',
+      '-maxrate', '3200k',
+      '-bufsize', '6000k',
+      '-g', '60',
+      '-keyint_min', '60',
+      '-sc_threshold', '0',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-ar', '44100',
+      '-ac', '2'
+    );
+  } else if (qualityPreset === 'eco') {
+    // 720p Eco (1,800 Kbps) - Low bandwidth saver
+    ffmpegArgs.push(
+      '-vf', "scale='min(1280,iw)':-2",
+      '-r', '30',
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-tune', 'zerolatency',
+      '-pix_fmt', 'yuv420p',
+      '-b:v', '1800k',
+      '-minrate', '1600k',
+      '-maxrate', '2000k',
+      '-bufsize', '3600k',
       '-g', '60',
       '-keyint_min', '60',
       '-sc_threshold', '0',
@@ -712,18 +764,18 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
       '-ar', '44100'
     );
   } else {
-    // Balanced (Anti-Buffering Default): 720p 30fps CBR, Zero-Latency, strict 2s keyframes
+    // Balanced Default: 1080p Standard (4,500 Kbps) - Rock solid on all platforms
     ffmpegArgs.push(
-      '-vf', "scale='min(1280,iw)':-2",
+      '-vf', "scale='min(1920,iw)':-2",
       '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
       '-pix_fmt', 'yuv420p',
-      '-b:v', '2000k',
-      '-minrate', '1800k',
-      '-maxrate', '2200k',
-      '-bufsize', '3000k',
+      '-b:v', '4500k',
+      '-minrate', '4000k',
+      '-maxrate', '5000k',
+      '-bufsize', '9000k',
       '-g', '60',
       '-keyint_min', '60',
       '-sc_threshold', '0',
@@ -736,6 +788,7 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
 
   // Output format and flags
   ffmpegArgs.push(
+    '-max_muxing_queue_size', '4096',
     '-f', 'flv',
     '-flvflags', 'no_duration_filesize',
     fullRtmpDestination

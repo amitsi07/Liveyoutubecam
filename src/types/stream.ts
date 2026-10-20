@@ -30,7 +30,7 @@ export interface StreamConfig {
   customRtmpUrl: string;
   streamKey: string;
   repeat: boolean;
-  qualityPreset?: 'ultra' | 'balanced' | 'eco';
+  qualityPreset?: 'fhd' | 'balanced' | 'hd' | 'eco' | 'ultra';
   videoResolution?: string;
   isDemoMode?: boolean;
 }

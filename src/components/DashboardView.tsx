@@ -77,7 +77,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [showStreamKey, setShowStreamKey] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [repeat, setRepeat] = useState(true);
-  const [qualityPreset, setQualityPreset] = useState<'ultra' | 'balanced' | 'eco'>('balanced');
+  const [qualityPreset, setQualityPreset] = useState<'fhd' | 'balanced' | 'hd' | 'eco' | 'ultra'>('fhd');
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showRenderModal, setShowRenderModal] = useState(false);
   const [renderUrlInput, setRenderUrlInput] = useState(() => localStorage.getItem('dolive_render_url') || '');
@@ -1080,22 +1080,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               name="quality_preset"
               id="quality_preset"
               value={qualityPreset}
-              onChange={(e) => setQualityPreset(e.target.value as 'ultra' | 'balanced' | 'eco')}
+              onChange={(e) => setQualityPreset(e.target.value as 'fhd' | 'balanced' | 'hd' | 'eco' | 'ultra')}
             >
+              <option value="fhd">
+                {lang === 'en'
+                  ? '🏆 1080p Full HD (6,000 Kbps - YouTube Recommended for 1080p)'
+                  : '🏆 1080p Full HD (6,000 Kbps - YouTube Khuyên dùng cho 1080p)'}
+              </option>
               <option value="balanced">
                 {lang === 'en'
-                  ? '⚖️ Balanced / Anti-Buffer (720p 30fps Zero-Latency - Recommended)'
-                  : '⚖️ Cân bằng / Chống giật (720p 30fps Zero-Latency - Khuyên dùng)'}
+                  ? '⚖️ 1080p Standard (4,500 Kbps - YouTube 1080p 30fps Standard)'
+                  : '⚖️ 1080p Tiêu chuẩn (4,500 Kbps - Chuẩn YouTube 1080p)'}
+              </option>
+              <option value="hd">
+                {lang === 'en'
+                  ? '🌟 720p HD (3,000 Kbps - YouTube Recommended for 720p)'
+                  : '🌟 720p HD (3,000 Kbps - YouTube Khuyên dùng cho 720p)'}
               </option>
               <option value="eco">
                 {lang === 'en'
-                  ? '🍃 Eco Saver (480p 1000 kbps - Super Smooth for Low Bandwidth)'
-                  : '🍃 Tiết kiệm Eco (480p 1000 kbps - Siêu mượt cho mạng yếu)'}
+                  ? '🍃 720p Eco (1,800 Kbps - Low Bandwidth / Weak Connection)'
+                  : '🍃 720p Tiết kiệm Eco (1,800 Kbps - Dành cho mạng yếu)'}
               </option>
               <option value="ultra">
                 {lang === 'en'
-                  ? '🚀 Ultra Direct Copy (Original Bitrate - High Bandwidth / May Buffer)'
-                  : '🚀 Ultra Direct Copy (Chất lượng gốc - Băng thông cao)'}
+                  ? '🚀 Ultra Direct Copy (Original Source Quality / No Re-encode)'
+                  : '🚀 Ultra Direct Copy (Chất lượng gốc / Không mã hóa lại)'}
               </option>
             </select>
           </div>
