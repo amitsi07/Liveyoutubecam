@@ -264,6 +264,9 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+// Memory map of uploaded files: maps original filename and generated safe name to absolute path
+const uploadedFilesMap = new Map<string, string>();
+
 // Clean up old uploads older than 6 hours
 function cleanOldUploads(): void {
   try {
@@ -486,6 +489,10 @@ app.post('/api/upload', requireAuth, (req: Request, res: Response) => {
     const sizeMb = (fs.statSync(targetPath).size / (1024 * 1024)).toFixed(1);
     addServerLog(`[Upload] File received: ${path.basename(rawFilename)} -> ${safeUniqueName} (${sizeMb} MB)`, 'success');
 
+    // Store in uploaded files map for fast resolution by both original name and safe name
+    uploadedFilesMap.set(path.basename(rawFilename).toLowerCase(), targetPath);
+    uploadedFilesMap.set(safeUniqueName.toLowerCase(), targetPath);
+
     res.json({
       success: true,
       filePath: targetPath,
@@ -558,15 +565,29 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
   // Validate Local File Source
   if (videoSource === 'file') {
     let resolvedPath = inputSource;
-    // Check if relative filename in uploads directory
-    if (!path.isAbsolute(resolvedPath)) {
+    const baseName = path.basename(inputSource).toLowerCase();
+
+    // Check if filename was recorded in uploadedFilesMap
+    if (uploadedFilesMap.has(baseName)) {
+      resolvedPath = uploadedFilesMap.get(baseName)!;
+    } else if (!path.isAbsolute(resolvedPath)) {
       resolvedPath = path.join(UPLOADS_DIR, path.basename(resolvedPath));
+    }
+
+    // Secondary fallback: find any uploaded file matching base name
+    if (!fs.existsSync(resolvedPath) && fs.existsSync(UPLOADS_DIR)) {
+      const files = fs.readdirSync(UPLOADS_DIR);
+      const nameWithoutExt = path.parse(baseName).name.toLowerCase();
+      const match = files.find((f) => f.toLowerCase().includes(nameWithoutExt));
+      if (match) {
+        resolvedPath = path.join(UPLOADS_DIR, match);
+      }
     }
 
     if (!fs.existsSync(resolvedPath)) {
       res.status(400).json({
         success: false,
-        message: `Video file "${path.basename(inputSource)}" not found on server. Please click "Choose File" and wait for upload to complete.`,
+        message: `Video file "${path.basename(inputSource)}" not found on server. Please click "Browse Video File" and wait for upload to complete (100%).`,
       });
       return;
     }

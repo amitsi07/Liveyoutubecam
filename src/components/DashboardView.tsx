@@ -173,60 +173,98 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [status.isPaused, status.isStreaming]);
 
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number>(0);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
 
-  // Handle local video file upload with real transfer to server
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle local video file upload with real transfer to server and progress tracking
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const blobUrl = URL.createObjectURL(file);
       setVideoBlobUrl(blobUrl);
       setVideoFileName(file.name);
-      setVideoFilePath(file.name);
+      setVideoFilePath(''); // Keep empty until confirmed by server!
       setIsUploading(true);
+      setUploadStatus('uploading');
+      setUploadPercent(0);
       setUploadProgress(
         lang === 'en'
-          ? `Uploading to server (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`
-          : `Đang tải lên máy chủ (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`
+          ? `Starting upload: 0% (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`
+          : `Bắt đầu tải lên: 0% (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`
       );
 
-      try {
-        const token = getAuthToken();
-        const uploadUrl = `/api/upload?filename=${encodeURIComponent(file.name)}`;
-        const res = await fetch(uploadUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: file,
-        });
+      const token = getAuthToken();
+      const uploadUrl = `/api/upload?filename=${encodeURIComponent(file.name)}`;
+      const xhr = new XMLHttpRequest();
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.filePath) {
-            setVideoFilePath(data.filePath);
-            setUploadProgress(
-              lang === 'en'
-                ? `Uploaded & ready to stream: ${file.name}`
-                : `Đã tải lên máy chủ: ${file.name}`
-            );
-            onShowMessage(
-              lang === 'en'
-                ? `Video uploaded to server! (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
-                : `Đã tải video lên máy chủ! (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
-            );
-          }
-        } else {
-          setUploadProgress(null);
-          onShowMessage(lang === 'en' ? 'Upload failed' : 'Tải lên máy chủ thất bại');
-        }
-      } catch (err: any) {
-        console.error('Upload error:', err);
-        setUploadProgress(null);
-      } finally {
-        setIsUploading(false);
+      xhr.open('POST', uploadUrl, true);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       }
+
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable) {
+          const pct = Math.round((evt.loaded / evt.total) * 100);
+          setUploadPercent(pct);
+          const loadedMb = (evt.loaded / (1024 * 1024)).toFixed(1);
+          const totalMb = (evt.total / (1024 * 1024)).toFixed(1);
+          setUploadProgress(
+            lang === 'en'
+              ? `Uploading: ${pct}% (${loadedMb} / ${totalMb} MB)`
+              : `Đang tải: ${pct}% (${loadedMb} / ${totalMb} MB)`
+          );
+        }
+      };
+
+      xhr.onload = () => {
+        setIsUploading(false);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (data.filePath) {
+              setVideoFilePath(data.filePath);
+              setUploadStatus('success');
+              setUploadPercent(100);
+              setUploadProgress(
+                lang === 'en'
+                  ? `Uploaded 100% (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+                  : `Đã tải lên máy chủ 100% (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+              );
+              onShowMessage(
+                lang === 'en'
+                  ? `Video uploaded to server! (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+                  : `Đã tải video lên máy chủ! (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+              );
+              return;
+            }
+          } catch {
+            // parse error
+          }
+        }
+
+        setUploadStatus('error');
+        setUploadProgress(null);
+        onShowMessage(
+          lang === 'en'
+            ? 'Upload failed. File might be too large or connection timed out.'
+            : 'Tải lên thất bại. Dung lượng tệp có thể quá lớn hoặc mất kết nối.'
+        );
+      };
+
+      xhr.onerror = () => {
+        setIsUploading(false);
+        setUploadStatus('error');
+        setUploadProgress(null);
+        onShowMessage(
+          lang === 'en'
+            ? 'Network error while uploading video to server.'
+            : 'Lỗi mạng khi tải video lên máy chủ.'
+        );
+      };
+
+      xhr.send(file);
     }
   };
 
@@ -257,17 +295,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     if (videoSource === 'file' && isUploading) {
       onShowMessage(
         lang === 'en'
-          ? 'Video is still uploading to server. Please wait a moment...'
-          : 'Video đang được tải lên máy chủ. Vui lòng đợi trong giây lát...'
+          ? `Video is still uploading (${uploadPercent}%). Please wait for upload to finish!`
+          : `Video đang được tải lên (${uploadPercent}%). Vui lòng đợi tải xong 100%! `
       );
       return;
     }
 
-    if (videoSource === 'file' && !videoFileName && !videoFilePath) {
+    if (videoSource === 'file' && !videoFilePath) {
       onShowMessage(
         lang === 'en'
-          ? 'Please click "Choose File" to select and upload your video first!'
-          : 'Vui lòng nhấn "Chọn tệp" để tải video lên máy chủ trước!'
+          ? 'Please wait for your video to finish uploading (100%) before starting! Or use a Sample Video below.'
+          : 'Vui lòng đợi video tải xong 100% lên máy chủ trước! Hoặc chọn Video mẫu bên dưới.'
       );
       return;
     }
@@ -818,18 +856,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </button>
                 </div>
                 {isUploading && (
-                  <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    ⏳ {uploadProgress}
+                  <div style={{ marginTop: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#2563eb', fontWeight: '600', marginBottom: '4px' }}>
+                      <span>⏳ {uploadProgress}</span>
+                      <span>{uploadPercent}%</span>
+                    </div>
+                    <div style={{ width: '100%', height: '6px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{ width: `${uploadPercent}%`, height: '100%', backgroundColor: '#2563eb', transition: 'width 0.2s ease' }}></div>
+                    </div>
+                  </div>
+                )}
+                {!isUploading && uploadStatus === 'success' && videoFilePath && (
+                  <span style={{ fontSize: '12px', color: '#059669', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                    <CheckCircle size={14} /> Ready to stream on server: {videoFileName}
                   </span>
                 )}
-                {!isUploading && uploadProgress && (
-                  <span style={{ fontSize: '12px', color: '#059669', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <CheckCircle size={14} /> {uploadProgress}
-                  </span>
-                )}
-                {!isUploading && !uploadProgress && videoFileName && (
-                  <span style={{ fontSize: '12px', color: '#059669', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <CheckCircle size={14} /> Ready to stream: {videoFileName}
+                {!isUploading && uploadStatus === 'error' && (
+                  <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                    ⚠️ Upload failed. Try a smaller video (&lt; 100MB) or use a Sample Video below.
                   </span>
                 )}
               </div>
@@ -1049,8 +1093,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* Submit Button */}
-          <button type="submit" name="action" value="start" className="primary-btn">
-            {t.startStreamBtn}
+          <button
+            type="submit"
+            name="action"
+            value="start"
+            className="primary-btn"
+            disabled={isUploading}
+            style={{
+              opacity: isUploading ? 0.6 : 1,
+              cursor: isUploading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {isUploading
+              ? `⏳ Uploading Video (${uploadPercent}%)... Please wait`
+              : t.startStreamBtn}
           </button>
         </form>
       </div>
