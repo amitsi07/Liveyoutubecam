@@ -254,6 +254,161 @@ export function checkFFmpegInstalled(): boolean {
   }
 }
 
+export function checkYtDlpInstalled(): boolean {
+  try {
+    return (
+      fs.existsSync('/usr/local/bin/yt-dlp') ||
+      fs.existsSync('/usr/bin/yt-dlp') ||
+      fs.existsSync('/bin/yt-dlp')
+    );
+  } catch {
+    return false;
+  }
+}
+
+export interface StreamResolutionResult {
+  success: boolean;
+  streamUrl?: string;
+  sourceType: 'direct' | 'ytdlp';
+  title?: string;
+  error?: string;
+  isBotBlocked?: boolean;
+}
+
+export async function resolveStreamUrl(rawUrl: string): Promise<StreamResolutionResult> {
+  const trimmed = rawUrl.trim();
+  const lower = trimmed.toLowerCase();
+
+  // If it's already a direct media stream URL, use it directly
+  const isDirectMedia =
+    lower.includes('.m3u8') ||
+    lower.includes('.mp4') ||
+    lower.includes('.ts') ||
+    lower.includes('.flv') ||
+    lower.includes('.mkv') ||
+    lower.startsWith('rtmp://') ||
+    lower.startsWith('rtmps://');
+
+  if (isDirectMedia) {
+    return {
+      success: true,
+      streamUrl: trimmed,
+      sourceType: 'direct',
+    };
+  }
+
+  // If it's a web link (YouTube, Twitch, Facebook, Vimeo, etc.), try yt-dlp
+  const hasYtDlp = checkYtDlpInstalled();
+  if (!hasYtDlp) {
+    return {
+      success: false,
+      sourceType: 'ytdlp',
+      error:
+        'Stream extractor (yt-dlp) is not installed on the server. Please provide a direct media URL (.m3u8 or .mp4) or upload your video file directly.',
+    };
+  }
+
+  return new Promise((resolve) => {
+    const cookiesPath = path.join(UPLOADS_DIR, 'cookies.txt');
+    const ytDlpBin = fs.existsSync('/usr/local/bin/yt-dlp')
+      ? '/usr/local/bin/yt-dlp'
+      : 'yt-dlp';
+
+    const args: string[] = ['--force-ipv4', '--no-warnings', '-g'];
+
+    if (fs.existsSync(cookiesPath)) {
+      args.push('--cookies', cookiesPath);
+    }
+
+    if (fs.existsSync('/usr/local/bin/node')) {
+      args.push('--js-runtimes', 'node:/usr/local/bin/node');
+    }
+
+    // Try best progressive format or HLS stream
+    args.push('-f', 'b/best', trimmed);
+
+    const child = spawn(ytDlpBin, args);
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+
+    const timeout = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+      resolve({
+        success: false,
+        sourceType: 'ytdlp',
+        error: 'Stream link resolution timed out after 15 seconds.',
+      });
+    }, 15000);
+
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      const lines = stdout
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith('http://') || l.startsWith('https://'));
+
+      if (code === 0 && lines.length > 0) {
+        resolve({
+          success: true,
+          streamUrl: lines[0],
+          sourceType: 'ytdlp',
+        });
+        return;
+      }
+
+      const fullErr = `${stderr} ${stdout}`;
+      const isBotBlocked =
+        fullErr.includes('Sign in to confirm you’re not a bot') ||
+        fullErr.includes('Sign in to confirm that you\'re not a bot') ||
+        fullErr.includes('LOGIN_REQUIRED');
+
+      if (isBotBlocked) {
+        resolve({
+          success: false,
+          sourceType: 'ytdlp',
+          isBotBlocked: true,
+          error:
+            'YouTube BotGuard detected cloud server IP. Solution: 1) Paste the direct HLS (.m3u8) stream link, 2) Upload your YouTube cookies.txt in DoLive, or 3) Upload the MP4 video directly for 100% reliable 24/7 streaming without bans.',
+        });
+      } else {
+        const cleanErr =
+          stderr
+            .split('\n')
+            .filter((l) => l.includes('ERROR:'))
+            .join(' ') ||
+          stderr ||
+          'Could not extract playable stream URL.';
+        resolve({
+          success: false,
+          sourceType: 'ytdlp',
+          error: cleanErr.replace(/ERROR:\s*/g, '').trim(),
+        });
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timeout);
+      resolve({
+        success: false,
+        sourceType: 'ytdlp',
+        error: `Failed to execute stream resolver: ${err.message}`,
+      });
+    });
+  });
+}
+
 // -----------------------------------------------------------------------------
 // STORAGE & UPLOAD MANAGEMENT
 // -----------------------------------------------------------------------------
@@ -512,16 +667,77 @@ app.post('/api/upload', requireAuth, (req: Request, res: Response) => {
   });
 });
 
+// API: Resolve and validate media link via yt-dlp or direct probe
+app.post('/api/stream/resolve', requireAuth, async (req: Request, res: Response) => {
+  const { url } = req.body;
+  if (!url || typeof url !== 'string' || !url.trim()) {
+    res.status(400).json({ success: false, message: 'Valid stream URL is required.' });
+    return;
+  }
+
+  let targetUrl = url.trim();
+  if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+    targetUrl = `https://${targetUrl}`;
+  }
+
+  const val = validateRemoteUrl(targetUrl);
+  if (!val.valid) {
+    res.status(400).json({ success: false, message: val.reason });
+    return;
+  }
+
+  const result = await resolveStreamUrl(targetUrl);
+  res.json(result);
+});
+
+// API: Manage YouTube cookies (to bypass datacenter IP bot detection on Render/VPS)
+app.post('/api/youtube/cookies', requireAuth, (req: Request, res: Response) => {
+  const { cookiesContent } = req.body;
+  if (!cookiesContent || typeof cookiesContent !== 'string' || !cookiesContent.trim()) {
+    res.status(400).json({ success: false, message: 'Cookies text content is required.' });
+    return;
+  }
+
+  try {
+    const cookiesPath = path.join(UPLOADS_DIR, 'cookies.txt');
+    fs.writeFileSync(cookiesPath, cookiesContent.trim(), 'utf-8');
+    addServerLog(`[YouTube Cookies 🍪] cookies.txt updated successfully (${cookiesContent.length} bytes).`, 'success');
+    res.json({ success: true, message: 'YouTube cookies saved! yt-dlp can now use your session to bypass bot checks.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: `Failed to save cookies: ${err.message}` });
+  }
+});
+
+app.get('/api/youtube/cookies', (_req: Request, res: Response) => {
+  const cookiesPath = path.join(UPLOADS_DIR, 'cookies.txt');
+  const exists = fs.existsSync(cookiesPath);
+  res.json({
+    hasCookies: exists,
+    sizeBytes: exists ? fs.statSync(cookiesPath).size : 0,
+  });
+});
+
+app.delete('/api/youtube/cookies', requireAuth, (_req: Request, res: Response) => {
+  const cookiesPath = path.join(UPLOADS_DIR, 'cookies.txt');
+  if (fs.existsSync(cookiesPath)) {
+    fs.unlinkSync(cookiesPath);
+    addServerLog(`[YouTube Cookies] cookies.txt removed.`, 'info');
+  }
+  res.json({ success: true, message: 'YouTube cookies removed.' });
+});
+
 // API: Current stream status
 app.get('/api/stream/status', (_req: Request, res: Response) => {
   res.json({
     ...streamState,
     isRealFFmpegRunning: activeProcess !== null,
+    hasYtDlp: checkYtDlpInstalled(),
+    hasYouTubeCookies: fs.existsSync(path.join(UPLOADS_DIR, 'cookies.txt')),
   });
 });
 
 // API: Start Real FFmpeg Livestream
-app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
+app.post('/api/stream/start', requireAuth, async (req: Request, res: Response) => {
   const {
     videoSource,
     videoFilePath,
@@ -614,23 +830,25 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
       return;
     }
 
-    // Friendly hint if user pastes web page link
-    const isWebPageUrl =
-      (inputSource.includes('facebook.com') ||
-        inputSource.includes('fb.watch') ||
-        inputSource.includes('instagram.com') ||
-        inputSource.includes('youtube.com') ||
-        inputSource.includes('youtu.be')) &&
-      !inputSource.includes('.mp4') &&
-      !inputSource.includes('.m3u8') &&
-      !inputSource.includes('.ts');
+    addServerLog(`[Stream Resolver 🔍] Resolving playable media stream from: ${inputSource}...`, 'info');
+    const resolution = await resolveStreamUrl(inputSource);
 
-    if (isWebPageUrl) {
-      addServerLog(
-        `[Warning] URL appears to be an HTML webpage (${inputSource}). FFmpeg requires direct media stream (.mp4/.m3u8).`,
-        'warn'
-      );
+    if (!resolution.success) {
+      addServerLog(`[Stream Resolver Error] ${resolution.error}`, 'error');
+      res.status(400).json({
+        success: false,
+        message: resolution.error,
+        isBotBlocked: resolution.isBotBlocked,
+        sourceType: resolution.sourceType,
+      });
+      return;
     }
+
+    inputSource = resolution.streamUrl!;
+    addServerLog(
+      `[Stream Resolver 🎯] Stream source resolved successfully (${resolution.sourceType === 'ytdlp' ? 'Extracted via yt-dlp' : 'Direct media URL'})`,
+      'success'
+    );
   }
 
   const cleanBase = baseRtmp.endsWith('/') ? baseRtmp : `${baseRtmp}/`;
@@ -659,8 +877,14 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
 
   const ffmpegArgs: string[] = [];
 
-  // Repeat infinitely if selected
-  if (repeat) {
+  const isLiveStream =
+    inputSource.includes('.m3u8') ||
+    inputSource.includes('live_broadcast') ||
+    inputSource.includes('hls_playlist') ||
+    inputSource.includes('manifest');
+
+  // Loop infinitely only for static files/videos (NEVER for live streams, which are already continuous)
+  if (repeat && !isLiveStream) {
     ffmpegArgs.push('-stream_loop', '-1');
   }
 
@@ -668,18 +892,21 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
   if (inputSource.startsWith('http://') || inputSource.startsWith('https://')) {
     ffmpegArgs.push(
       '-reconnect', '1',
-      '-reconnect_at_eof', '1',
       '-reconnect_streamed', '1',
       '-reconnect_delay_max', '5'
     );
+    // Only reconnect at EOF for static VOD files, not ongoing live streams
+    if (!isLiveStream) {
+      ffmpegArgs.push('-reconnect_at_eof', '1');
+    }
   }
 
   // Pre-input pacing and queueing to avoid packet drops
-  ffmpegArgs.push(
-    '-thread_queue_size', '2048',
-    '-re',
-    '-fflags', '+genpts'
-  );
+  ffmpegArgs.push('-thread_queue_size', '2048');
+  if (!isLiveStream) {
+    ffmpegArgs.push('-re');
+  }
+  ffmpegArgs.push('-fflags', '+genpts');
 
   // Input file
   ffmpegArgs.push('-i', inputSource);
@@ -690,16 +917,21 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
     '-vsync', '1'
   );
 
+  // Map primary video and audio stream safely (prevents FLV multiplex error on multi-stream HLS/MP4)
+  ffmpegArgs.push('-map', '0:v:0?', '-map', '0:a:0?');
+
   // Quality & Encoding configurations
   // NOTE: YouTube Live strictly enforces 2-second keyframes (-g 60 for 30fps).
   if (qualityPreset === 'fhd') {
-    // 1080p Full HD (6,000 Kbps) - Matches YouTube Studio 6800 kbps recommendation
+    // 1080p Full HD (6,000 Kbps) - High CPU / Dedicated Servers
     ffmpegArgs.push(
+      '-sws_flags', 'fast_bilinear',
       '-vf', "scale='min(1920,iw)':-2",
       '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
+      '-threads', '2',
       '-pix_fmt', 'yuv420p',
       '-b:v', '6000k',
       '-minrate', '5500k',
@@ -716,11 +948,13 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
   } else if (qualityPreset === 'hd') {
     // 720p HD (3,000 Kbps) - YouTube 720p Standard
     ffmpegArgs.push(
+      '-sws_flags', 'fast_bilinear',
       '-vf', "scale='min(1280,iw)':-2",
       '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
+      '-threads', '2',
       '-pix_fmt', 'yuv420p',
       '-b:v', '3000k',
       '-minrate', '2800k',
@@ -737,11 +971,13 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
   } else if (qualityPreset === 'eco') {
     // 720p Eco (1,800 Kbps) - Low bandwidth saver
     ffmpegArgs.push(
+      '-sws_flags', 'fast_bilinear',
       '-vf', "scale='min(1280,iw)':-2",
       '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
+      '-threads', '2',
       '-pix_fmt', 'yuv420p',
       '-b:v', '1800k',
       '-minrate', '1600k',
@@ -756,7 +992,7 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
       '-ac', '2'
     );
   } else if (qualityPreset === 'ultra') {
-    // Ultra Direct Copy: minimal CPU overhead when source is already compliant H.264
+    // Ultra Direct Copy: 0% CPU overhead - BEST for Render free tier & zero buffering
     ffmpegArgs.push(
       '-c:v', 'copy',
       '-c:a', 'aac',
@@ -764,13 +1000,15 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
       '-ar', '44100'
     );
   } else {
-    // Balanced Default: 1080p Standard (4,500 Kbps) - Rock solid on all platforms
+    // Balanced Default: 1080p Standard (4,500 Kbps)
     ffmpegArgs.push(
+      '-sws_flags', 'fast_bilinear',
       '-vf', "scale='min(1920,iw)':-2",
       '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
+      '-threads', '2',
       '-pix_fmt', 'yuv420p',
       '-b:v', '4500k',
       '-minrate', '4000k',
@@ -834,7 +1072,16 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
           if (timeMatch) streamState.time = timeMatch[1].split('.')[0];
           if (sizeMatch) streamState.size = sizeMatch[1];
           if (bitrateMatch) streamState.bitrate = bitrateMatch[1];
-          if (speedMatch) streamState.speed = `${speedMatch[1]}x`;
+          if (speedMatch) {
+            streamState.speed = `${speedMatch[1]}x`;
+            const speedVal = parseFloat(speedMatch[1]);
+            if (speedVal < 0.85 && streamState.frame > 30 && streamState.frame % 90 === 0) {
+              addServerLog(
+                `⚠️ Low Server CPU Speed (${speedMatch[1]}x): Broadcast is running slower than 1.0x realtime. Viewers may experience buffering. Switch Stream Quality to 'Fast Direct Stream (0% CPU)' for smooth playback!`,
+                'warn'
+              );
+            }
+          }
 
           // Live telemetry log every ~30 frames (~1 second)
           if (streamState.frame > 0 && streamState.frame % 30 === 0) {
@@ -848,9 +1095,20 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
           addServerLog(`[Handshake] RTMP Server Connection Accepted! Stream mapping OK.`, 'success');
         } else if (trimmed.includes('Output #0') || trimmed.includes('Stream #0') || trimmed.includes('Input #0')) {
           addServerLog(`[FFmpeg] ${trimmed}`, 'info');
+        } else if (
+          trimmed.includes('Error in the pull function') ||
+          (trimmed.includes('Input/output error') && (trimmed.includes('rtmp') || trimmed.includes('tls'))) ||
+          trimmed.includes('Connection reset by peer') ||
+          trimmed.includes('Broken pipe') ||
+          trimmed.includes('handshake failed')
+        ) {
+          addServerLog(`[RTMP Rejection ❌] Streaming server rejected connection: Stream Key is invalid, expired, or inactive.`, 'error');
+          streamState.error = `YouTube RTMP rejected your Stream Key. Please ensure you copied your active Stream Key from YouTube Studio (studio.youtube.com > Go Live). If testing, click '🧪 Demo Stream Key' to preview locally.`;
         } else if (trimmed.includes('Error') || trimmed.includes('Connection refused') || trimmed.includes('Server error') || trimmed.includes('failed')) {
           addServerLog(`[Error] ${trimmed}`, 'error');
-          streamState.error = trimmed;
+          if (!streamState.error) {
+            streamState.error = trimmed;
+          }
         } else if (trimmed.includes('Opening') || trimmed.includes('Duration:') || trimmed.includes('Metadata:')) {
           addServerLog(`[FFmpeg] ${trimmed}`, 'info');
         }
@@ -868,11 +1126,21 @@ app.post('/api/stream/start', requireAuth, (req: Request, res: Response) => {
           `[Process] FFmpeg process exited with code ${code}. Check stream key and ensure video source is valid.`,
           'error'
         );
-        if (!streamState.error) {
-          const isSuspectedDummyKey = streamKey.startsWith('live_') || streamKey.startsWith('demo_') || streamKey.includes('_stream');
+        if (
+          !streamState.error ||
+          streamState.error.includes('Error in the pull function') ||
+          streamState.error.includes('Input/output error') ||
+          streamState.frame === 0
+        ) {
+          const isSuspectedDummyKey =
+            streamKey.startsWith('live_') ||
+            streamKey.startsWith('demo_') ||
+            streamKey.includes('_stream') ||
+            streamKey.length < 10 ||
+            streamKey.includes('•');
           streamState.error = isSuspectedDummyKey
-            ? `RTMP server rejected the stream key. For real broadcasting, obtain your stream key from YouTube Studio (studio.youtube.com > Go Live). Or use Demo Mode in DoLive to test locally without a real key.`
-            : `FFmpeg stopped (Exit code ${code}). Check if Stream Key is valid and video source is accessible.`;
+            ? `RTMP server rejected the stream key. For real broadcasting, obtain your real stream key from YouTube Studio (studio.youtube.com > Go Live). Or use Demo Mode in DoLive to test locally without a real key.`
+            : `YouTube RTMP server disconnected during handshake (Exit code ${code}). Please verify your Stream Key in YouTube Studio (studio.youtube.com > Go Live). For testing, use Demo Mode.`;
         }
         streamState.sessionState = 'ERROR';
       } else {

@@ -61,6 +61,7 @@ export interface StreamStatus {
   health: 'excellent' | 'good' | 'fair' | 'poor';
   logs: StreamLogItem[];
   destinationRedacted?: string;
+  lastError?: string | null;
 }
 
 export interface KeyStorage {

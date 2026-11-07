@@ -17,6 +17,9 @@ import {
   CheckCircle,
   Cloud,
   ShieldCheck,
+  Cookie,
+  Search,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   StreamConfig,
@@ -50,6 +53,11 @@ const SAMPLE_VIDEOS = [
     name: 'sampleFlower',
     url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
     title: '🌸 Nature Garden (HD)',
+  },
+  {
+    name: 'sampleLiveHls',
+    url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+    title: '📺 Mux Live HLS (.m3u8 720p)',
   },
 ];
 
@@ -85,6 +93,114 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [showLogs, setShowLogs] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
 
+  const [isResolvingUrl, setIsResolvingUrl] = useState(false);
+  const [resolveResult, setResolveResult] = useState<{
+    success: boolean;
+    streamUrl?: string;
+    sourceType?: 'direct' | 'ytdlp';
+    isBotBlocked?: boolean;
+    error?: string;
+  } | null>(null);
+
+  const [showCookiesModal, setShowCookiesModal] = useState(false);
+  const [hasServerCookies, setHasServerCookies] = useState(false);
+  const [cookiesTextInput, setCookiesTextInput] = useState('');
+  const [savingCookies, setSavingCookies] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/youtube/cookies')
+      .then((r) => r.json())
+      .then((d) => setHasServerCookies(Boolean(d.hasCookies)))
+      .catch(() => {});
+  }, []);
+
+  const handleResolveUrl = async () => {
+    if (!videoUrl.trim()) {
+      onShowMessage(lang === 'en' ? 'Please enter a video URL first!' : 'Vui lòng nhập URL video trước!');
+      return;
+    }
+    setIsResolvingUrl(true);
+    setResolveResult(null);
+    try {
+      const token = getAuthToken();
+      const res = await fetch('/api/stream/resolve', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ url: videoUrl.trim() }),
+      });
+      const data = await res.json();
+      setIsResolvingUrl(false);
+      setResolveResult(data);
+      if (data.success) {
+        onShowMessage(
+          lang === 'en'
+            ? `Stream URL verified! (${data.sourceType === 'ytdlp' ? 'Extracted with yt-dlp' : 'Direct media stream'})`
+            : `Đã phân tích link stream thành công!`
+        );
+      } else {
+        onShowMessage(data.error || 'Failed to resolve stream link.');
+      }
+    } catch (err: any) {
+      setIsResolvingUrl(false);
+      setResolveResult({
+        success: false,
+        error: `Could not reach server: ${err.message}`,
+      });
+      onShowMessage(`Error: ${err.message}`);
+    }
+  };
+
+  const handleSaveCookies = async () => {
+    if (!cookiesTextInput.trim()) {
+      onShowMessage(lang === 'en' ? 'Please paste cookies.txt content!' : 'Vui lòng dán nội dung cookies.txt!');
+      return;
+    }
+    setSavingCookies(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch('/api/youtube/cookies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ cookiesContent: cookiesTextInput.trim() }),
+      });
+      const data = await res.json();
+      setSavingCookies(false);
+      if (res.ok && data.success) {
+        setHasServerCookies(true);
+        setShowCookiesModal(false);
+        setCookiesTextInput('');
+        onShowMessage(
+          lang === 'en'
+            ? 'YouTube cookies saved! yt-dlp will now use your session to bypass bot checks.'
+            : 'Đã lưu cookies YouTube! yt-dlp sẽ dùng để vượt qua kiểm tra bot.'
+        );
+      } else {
+        onShowMessage(data.message || 'Failed to save cookies.');
+      }
+    } catch (err: any) {
+      setSavingCookies(false);
+      onShowMessage(`Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteCookies = async () => {
+    try {
+      const token = getAuthToken();
+      await fetch('/api/youtube/cookies', {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      setHasServerCookies(false);
+      onShowMessage(lang === 'en' ? 'YouTube cookies removed.' : 'Đã xóa cookies YouTube.');
+    } catch {}
+  };
+
   const handleActivateKeepAlive = async () => {
     if (!renderUrlInput.trim()) {
       onShowMessage(lang === 'en' ? 'Please enter your Render application URL!' : 'Vui lòng nhập URL của bạn trên Render!');
@@ -111,9 +227,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cookieFileInputRef = useRef<HTMLInputElement | null>(null);
   const videoPlayerRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
+
+  const handleCookieFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        if (content) {
+          setCookiesTextInput(content);
+          onShowMessage(lang === 'en' ? `Loaded ${file.name} (${content.length} bytes)` : `Đã tải ${file.name}`);
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
 
   // Auto scroll logs
   useEffect(() => {
@@ -311,25 +443,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       return;
     }
 
-    if (videoSource === 'url') {
-      const trimmedUrl = videoUrl.trim().toLowerCase();
-      const isWebPage =
-        (trimmedUrl.includes('youtube.com/watch') ||
-          trimmedUrl.includes('youtu.be/') ||
-          trimmedUrl.includes('facebook.com/') ||
-          trimmedUrl.includes('fb.watch/')) &&
-        !trimmedUrl.includes('.mp4') &&
-        !trimmedUrl.includes('.m3u8') &&
-        !trimmedUrl.includes('.flv');
-
-      if (isWebPage) {
-        onShowMessage(
-          lang === 'en'
-            ? 'Webpage URLs (like youtube.com/watch or facebook.com) cannot be decoded directly by FFmpeg. Please provide a direct media link (.mp4, .m3u8, .flv), upload a video file, or test with a Sample Video below.'
-            : 'Link trang web (như youtube.com/watch hoặc facebook.com) không thể giải mã trực tiếp. Vui lòng dùng link video trực tiếp (.mp4, .m3u8), tải tệp lên hoặc chọn Video mẫu bên dưới.'
-        );
-        return;
-      }
+    if (videoSource === 'url' && !videoUrl.trim()) {
+      onShowMessage(lang === 'en' ? 'Please provide a video URL!' : 'Vui lòng nhập URL video!');
+      return;
     }
 
     const isDemo =
@@ -451,7 +567,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={() => setShowCookiesModal(true)}
+            style={{
+              background: hasServerCookies ? '#ecfdf5' : '#fffbeb',
+              border: `1px solid ${hasServerCookies ? '#10b981' : '#f59e0b'}`,
+              color: hasServerCookies ? '#059669' : '#d97706',
+              borderRadius: '6px',
+              padding: '3px 8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '12px',
+              fontWeight: '600',
+            }}
+            title="Manage YouTube cookies to bypass cloud datacenter bot protection"
+          >
+            <Cookie size={14} /> {hasServerCookies ? 'YouTube Cookies: Active ✓' : 'YouTube Cookies'}
+          </button>
+
           <button
             type="button"
             onClick={() => setShowRenderModal(true)}
@@ -512,6 +649,78 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       <h1>{t.appTitle}</h1>
 
+      {/* Stream Error / Rejection Banner */}
+      {(status.sessionState === 'ERROR' || Boolean(status.lastError)) && !status.isStreaming && (
+        <div
+          style={{
+            backgroundColor: '#fff1f2',
+            border: '1.5px solid #f43f5e',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: '16px',
+            boxShadow: '0 4px 12px rgba(244, 63, 94, 0.12)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+            <AlertTriangle size={22} style={{ color: '#e11d48', flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ color: '#be123c', fontSize: '15px', fontWeight: 'bold', marginBottom: '6px' }}>
+                {lang === 'en' ? '⚠️ Stream Connection Terminated' : '⚠️ Kết nối phát sóng bị gián đoạn'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#881337', lineHeight: '1.5' }}>
+                {status.lastError ||
+                  (status.logs.find((l) => l.level === 'error')?.message) ||
+                  (lang === 'en'
+                    ? 'The streaming destination server closed the connection. Please verify your Stream Key is valid and active.'
+                    : 'Máy chủ phát sóng đã đóng kết nối. Vui lòng kiểm tra lại Stream Key.')}
+              </div>
+
+              <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleUseDemoKey}
+                  style={{
+                    background: '#059669',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <Sparkles size={13} /> {lang === 'en' ? 'Switch to Demo Mode (Test Locally)' : 'Chuyển sang Demo (Thử nội bộ)'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowHelpModal(true)}
+                  style={{
+                    background: '#fff',
+                    border: '1px solid #e11d48',
+                    color: '#be123c',
+                    borderRadius: '8px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <HelpCircle size={13} /> {lang === 'en' ? 'How to get YouTube Stream Key' : 'Hướng dẫn lấy Stream Key YouTube'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ACTIVE LIVESTREAM MONITOR */}
       {status.isStreaming && (
         <div className="livestream-info" id="livestreamBox">
@@ -528,19 +737,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {t.nowLiveTitle}
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span
-                style={{
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  backgroundColor: '#ff3399',
-                  color: '#fff',
-                  padding: '3px 10px',
-                  borderRadius: '12px',
-                  letterSpacing: '1px',
-                }}
-              >
-                {t.liveBadge}
-              </span>
+              {status.sessionState === 'STARTING' || status.frame === 0 ? (
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    backgroundColor: '#f59e0b',
+                    color: '#fff',
+                    padding: '3px 10px',
+                    borderRadius: '12px',
+                    letterSpacing: '1px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  🔄 {lang === 'en' ? 'CONNECTING...' : 'ĐANG KẾT NỐI...'}
+                </span>
+              ) : (
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    backgroundColor: '#ff3399',
+                    color: '#fff',
+                    padding: '3px 10px',
+                    borderRadius: '12px',
+                    letterSpacing: '1px',
+                  }}
+                >
+                  {t.liveBadge}
+                </span>
+              )}
             </div>
           </div>
 
@@ -673,8 +901,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div style={{ background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #ffd6e8' }}>
               <span style={{ fontSize: '12px', color: '#666', display: 'block' }}>{t.metricHealth}</span>
-              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#059669' }}>
-                {status.health === 'excellent' ? t.healthExcellent : t.healthGood}
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: status.frame > 0 ? '#059669' : '#d97706' }}>
+                {status.frame === 0 ? '🔄 Connecting...' : status.health === 'excellent' ? t.healthExcellent : t.healthGood}
               </span>
             </div>
           </div>
@@ -906,17 +1134,115 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* Video URL Source Details */}
             {videoSource === 'url' && (
-              <div id="urlOption">
-                <input
-                  type="text"
-                  name="video_url"
-                  placeholder={t.urlPlaceholder}
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
-                  required
-                />
-                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>
-                  ℹ️ <strong>Direct Video URL needed</strong> (.mp4, .m3u8, .flv). Social media web links (like facebook.com/share/...) cannot be decoded directly by FFmpeg. Or choose a <strong>Sample Video</strong> below.
+              <div id="urlOption" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    name="video_url"
+                    placeholder="https://... (Direct .m3u8, .mp4, or YouTube/web link)"
+                    value={videoUrl}
+                    onChange={(e) => {
+                      setVideoUrl(e.target.value);
+                      setResolveResult(null);
+                    }}
+                    required
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleResolveUrl}
+                    disabled={isResolvingUrl || !videoUrl.trim()}
+                    style={{
+                      backgroundColor: '#2563eb',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '0 14px',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      whiteSpace: 'nowrap',
+                      cursor: isResolvingUrl || !videoUrl.trim() ? 'not-allowed' : 'pointer',
+                      opacity: isResolvingUrl || !videoUrl.trim() ? 0.6 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    title="Test URL and extract media stream before broadcasting"
+                  >
+                    <Search size={14} />
+                    {isResolvingUrl ? 'Testing...' : 'Test Link'}
+                  </button>
+                </div>
+
+                {/* Resolution Status Feedback */}
+                {resolveResult && resolveResult.success && (
+                  <div style={{ fontSize: '12px', color: '#059669', background: '#ecfdf5', padding: '8px 10px', borderRadius: '6px', border: '1px solid #a7f3d0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CheckCircle size={15} />
+                    <span>
+                      <strong>Stream Ready:</strong> {resolveResult.sourceType === 'ytdlp' ? 'Resolved live stream via yt-dlp' : 'Direct media stream detected'} (.m3u8 / .mp4).
+                    </span>
+                  </div>
+                )}
+
+                {resolveResult && !resolveResult.success && (
+                  <div style={{ fontSize: '12px', color: '#991b1b', background: '#fef2f2', padding: '10px 12px', borderRadius: '6px', border: '1px solid #fecaca' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
+                      <AlertTriangle size={15} />
+                      <span>{resolveResult.isBotBlocked ? 'YouTube Cloud IP Protection Detected' : 'Stream Resolution Failed'}</span>
+                    </div>
+                    <div style={{ marginTop: '4px', lineHeight: 1.5 }}>
+                      {resolveResult.isBotBlocked ? (
+                        <>
+                          <div>YouTube bot detection blocked cloud server IP from opening web pages directly.</div>
+                          <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => setShowCookiesModal(true)}
+                              style={{ background: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Cookie size={13} /> Add YouTube Cookies
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVideoSource('file');
+                                setTimeout(() => fileInputRef.current?.click(), 100);
+                              }}
+                              style={{ background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Upload size={13} /> Upload Video File (Recommended)
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        resolveResult.error
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#6b7280', flexWrap: 'wrap', gap: '6px' }}>
+                  <span>
+                    Supports <strong>Direct Streams (.m3u8, .mp4)</strong> and supported platforms via yt-dlp.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowCookiesModal(true)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: hasServerCookies ? '#059669' : '#d97706',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: 0,
+                    }}
+                  >
+                    <Cookie size={13} /> {hasServerCookies ? 'YouTube Cookies (Active ✓)' : 'Bypass with Cookies'}
+                  </button>
                 </div>
               </div>
             )}
@@ -1065,8 +1391,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </div>
             ) : (
-              <div style={{ fontSize: '11px', color: '#777', marginTop: '4px' }}>
-                ℹ️ {lang === 'en' ? 'Requires a valid stream key from your streaming platform.' : 'Yêu cầu Stream Key hợp lệ từ nền tảng phát sóng của bạn.'}
+              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px', lineHeight: 1.5 }}>
+                <span style={{ color: '#dc2626', fontWeight: 'bold' }}>⚠️ Note:</span>{' '}
+                {lang === 'en'
+                  ? 'Must be your real Stream Key from YouTube Studio (studio.youtube.com > Go Live). If you just want to test without broadcasting, click "Demo Stream Key" above.'
+                  : 'Cần Stream Key thật từ YouTube Studio (studio.youtube.com > Phát trực tiếp). Nếu bạn chỉ muốn chạy thử, hãy bấm "Demo Stream Key" ở trên.'}
               </div>
             )}
           </div>
@@ -1354,6 +1683,123 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             <div style={{ textAlign: 'center', marginTop: '18px' }}>
               <button type="button" onClick={() => setShowRenderModal(false)}>
+                {t.closeBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* YouTube Cookies Modal */}
+      {showCookiesModal && (
+        <div className="popup-overlay" onClick={() => setShowCookiesModal(false)}>
+          <div
+            className="popup-content"
+            style={{ maxWidth: '480px', textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+              <Cookie size={22} style={{ color: '#d97706' }} />
+              <strong style={{ fontSize: '18px', color: '#111', margin: 0 }}>
+                YouTube Cookies Configuration
+              </strong>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#555', margin: '4px 0 10px 0', lineHeight: 1.5 }}>
+              YouTube blocks cloud/datacenter IP addresses (like Render) unless requests include authenticated session cookies. You can paste your exported <code>cookies.txt</code> below so yt-dlp can stream YouTube videos smoothly.
+            </p>
+
+            <div style={{ fontSize: '12px', color: '#444', background: '#f9fafb', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', marginBottom: '12px' }}>
+              <strong>How to get cookies.txt in 1 minute:</strong>
+              <div style={{ marginTop: '4px' }}>1. Open Chrome/Firefox/Edge on PC or phone.</div>
+              <div>2. Install extension: <em>&quot;Get cookies.txt LOCALLY&quot;</em>.</div>
+              <div>3. Visit youtube.com (ensure you are signed in).</div>
+              <div>4. Click extension, copy exported text, and paste below.</div>
+            </div>
+
+            {hasServerCookies && (
+              <div style={{ marginBottom: '12px', background: '#ecfdf5', padding: '8px 10px', borderRadius: '6px', border: '1px solid #a7f3d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', color: '#059669', fontWeight: 'bold' }}>
+                  ✓ Server has cookies.txt active
+                </span>
+                <button
+                  type="button"
+                  onClick={handleDeleteCookies}
+                  style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  Delete Cookies
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#333', margin: 0 }}>
+                Paste or Upload cookies.txt:
+              </label>
+              <input
+                type="file"
+                ref={cookieFileInputRef}
+                accept=".txt"
+                style={{ display: 'none' }}
+                onChange={handleCookieFileChange}
+              />
+              <button
+                type="button"
+                onClick={() => cookieFileInputRef.current?.click()}
+                style={{
+                  background: '#f3f4f6',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  color: '#374151',
+                }}
+              >
+                <Upload size={12} /> Select .txt File
+              </button>
+            </div>
+            <textarea
+              rows={6}
+              value={cookiesTextInput}
+              onChange={(e) => setCookiesTextInput(e.target.value)}
+              placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;1790000000&#9;VISITOR_INFO1_LIVE&#9;..."
+              style={{
+                width: '100%',
+                fontFamily: 'monospace',
+                fontSize: '11px',
+                padding: '8px',
+                borderRadius: '6px',
+                border: '1px solid #ccc',
+                resize: 'vertical',
+                boxSizing: 'border-box',
+              }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px' }}>
+              <button
+                type="button"
+                onClick={handleSaveCookies}
+                disabled={savingCookies || !cookiesTextInput.trim()}
+                style={{
+                  backgroundColor: '#d97706',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: 'bold',
+                  cursor: savingCookies || !cookiesTextInput.trim() ? 'not-allowed' : 'pointer',
+                  opacity: savingCookies || !cookiesTextInput.trim() ? 0.6 : 1,
+                }}
+              >
+                {savingCookies ? 'Saving...' : 'Save YouTube Cookies'}
+              </button>
+              <button type="button" onClick={() => setShowCookiesModal(false)}>
                 {t.closeBtn}
               </button>
             </div>

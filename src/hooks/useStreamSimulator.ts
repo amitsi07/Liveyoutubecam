@@ -175,6 +175,7 @@ export function useStreamManager() {
                 isConnect: true,
                 sessionState: data.error ? 'ERROR' : 'STOPPED',
                 msg: failureMsg,
+                lastError: data.error ? failureMsg : null,
                 logs:
                   data.logs && Array.isArray(data.logs) && data.logs.length > 0
                     ? data.logs.map((l: any, idx: number) => ({
@@ -297,6 +298,7 @@ export function useStreamManager() {
         bitrate: '--',
         speed: '--',
         msg: null,
+        lastError: null,
         logs: [
           {
             id: 'init-1',
@@ -345,6 +347,7 @@ export function useStreamManager() {
             isStreaming: false,
             isConnect: true,
             msg: errorMsg,
+            lastError: errorMsg,
           }));
           addLog(`[Server Error] ${errorMsg}`, 'error');
           return { success: false, messageKey: errorMsg, errorDetail: errorMsg };
@@ -360,6 +363,7 @@ export function useStreamManager() {
           isStreaming: false,
           isConnect: true,
           msg: networkError,
+          lastError: networkError,
         }));
         addLog(`[Connection Error] ${networkError}`, 'error');
         return { success: false, messageKey: networkError, errorDetail: networkError };
