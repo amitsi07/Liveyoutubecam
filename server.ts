@@ -314,7 +314,13 @@ export async function resolveStreamUrl(rawUrl: string): Promise<StreamResolution
       ? '/usr/local/bin/yt-dlp'
       : 'yt-dlp';
 
-    const args: string[] = ['--force-ipv4', '--no-warnings', '-g'];
+    const args: string[] = [
+      '--force-ipv4',
+      '--no-warnings',
+      '--extractor-args',
+      'youtube:player_client=ios,android,web',
+      '-g',
+    ];
 
     if (fs.existsSync(cookiesPath)) {
       args.push('--cookies', cookiesPath);
@@ -348,9 +354,10 @@ export async function resolveStreamUrl(rawUrl: string): Promise<StreamResolution
       resolve({
         success: false,
         sourceType: 'ytdlp',
-        error: 'Stream link resolution timed out after 15 seconds.',
+        error: 'Stream link resolution timed out after 25 seconds. YouTube bot protection may be blocking this link.',
+        isBotBlocked: true,
       });
-    }, 15000);
+    }, 25000);
 
     child.on('close', (code) => {
       clearTimeout(timeout);

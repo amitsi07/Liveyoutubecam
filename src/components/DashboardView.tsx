@@ -1197,6 +1197,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <button
                               type="button"
+                              onClick={() => {
+                                const sample = SAMPLE_VIDEOS.find(s => s.name === 'sampleLiveHls') || SAMPLE_VIDEOS[2];
+                                setVideoUrl(sample.url);
+                                setResolveResult({ success: true, streamUrl: sample.url, sourceType: 'direct' });
+                              }}
+                              style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Play size={13} /> Use Live Sample Stream (.m3u8)
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setShowCookiesModal(true)}
                               style={{ background: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
                             >
