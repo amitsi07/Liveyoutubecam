@@ -275,7 +275,109 @@ export interface StreamResolutionResult {
   isBotBlocked?: boolean;
 }
 
-export async function resolveStreamUrl(rawUrl: string): Promise<StreamResolutionResult> {
+async function runYtDlp(
+  url: string,
+  useCookies: boolean,
+  proxyUrl?: string
+): Promise<{ success: boolean; streamUrl?: string; error?: string; isBotBlocked?: boolean }> {
+  const ytDlpBin = fs.existsSync('/usr/local/bin/yt-dlp') ? '/usr/local/bin/yt-dlp' : 'yt-dlp';
+  const cookiesPath = path.join(UPLOADS_DIR, 'cookies.txt');
+
+  const args: string[] = [
+    '--force-ipv4',
+    '--no-warnings',
+    '--no-playlist',
+    '--extractor-args',
+    'youtube:player_client=tv_embedded,android_embedded,ios,android',
+    '--add-header',
+    'Accept-Language:en-US,en;q=0.9',
+    '--user-agent',
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    '-g',
+  ];
+
+  const activeProxy = proxyUrl?.trim() || process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY;
+  if (activeProxy) {
+    args.push('--proxy', activeProxy);
+  }
+
+  if (useCookies && fs.existsSync(cookiesPath)) {
+    args.push('--cookies', cookiesPath);
+  }
+
+  if (fs.existsSync('/usr/local/bin/node')) {
+    args.push('--js-runtimes', 'node:/usr/local/bin/node');
+  }
+
+  // Format selection supporting both static VOD and live HLS stream
+  args.push('-f', 'best[protocol^=m3u8]/b/best', url);
+
+  return new Promise((resolve) => {
+    const child = spawn(ytDlpBin, args);
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+
+    const timeout = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+      resolve({
+        success: false,
+        error: 'Stream link resolution timed out after 25 seconds. YouTube bot protection may be blocking this link.',
+        isBotBlocked: true,
+      });
+    }, 25000);
+
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      const lines = stdout
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith('http://') || l.startsWith('https://'));
+
+      if (code === 0 && lines.length > 0) {
+        resolve({
+          success: true,
+          streamUrl: lines[0],
+        });
+        return;
+      }
+
+      const fullErr = `${stderr} ${stdout}`;
+      const isBotBlocked =
+        fullErr.includes('Sign in to confirm you’re not a bot') ||
+        fullErr.includes('Sign in to confirm that you\'re not a bot') ||
+        fullErr.includes('LOGIN_REQUIRED') ||
+        fullErr.includes('HTTP Error 429');
+
+      resolve({
+        success: false,
+        isBotBlocked,
+        error: fullErr,
+      });
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timeout);
+      resolve({
+        success: false,
+        error: `Failed to execute stream resolver: ${err.message}`,
+      });
+    });
+  });
+}
+
+export async function resolveStreamUrl(rawUrl: string, proxyUrl?: string): Promise<StreamResolutionResult> {
   const trimmed = rawUrl.trim();
   const lower = trimmed.toLowerCase();
 
@@ -308,112 +410,39 @@ export async function resolveStreamUrl(rawUrl: string): Promise<StreamResolution
     };
   }
 
-  return new Promise((resolve) => {
-    const cookiesPath = path.join(UPLOADS_DIR, 'cookies.txt');
-    const ytDlpBin = fs.existsSync('/usr/local/bin/yt-dlp')
-      ? '/usr/local/bin/yt-dlp'
-      : 'yt-dlp';
+  const cookiesPath = path.join(UPLOADS_DIR, 'cookies.txt');
+  const hasCookies = fs.existsSync(cookiesPath);
 
-    const args: string[] = [
-      '--force-ipv4',
-      '--no-warnings',
-      '--extractor-args',
-      'youtube:player_client=ios,android,web',
-      '-g',
-    ];
+  // Attempt 1: Try with cookies (if exists) and tv_embedded/android_embedded
+  let result = await runYtDlp(trimmed, hasCookies, proxyUrl);
 
-    if (fs.existsSync(cookiesPath)) {
-      args.push('--cookies', cookiesPath);
-    }
+  // Attempt 2: If attempt 1 failed with bot block or login required and cookies were used, retry without cookies
+  if (!result.success && hasCookies && (result.isBotBlocked || result.error?.includes('LOGIN_REQUIRED'))) {
+    addServerLog(`[Stream Resolver] Attempt with cookies failed. Retrying without cookies via tv_embedded...`, 'warn');
+    result = await runYtDlp(trimmed, false, proxyUrl);
+  }
 
-    if (fs.existsSync('/usr/local/bin/node')) {
-      args.push('--js-runtimes', 'node:/usr/local/bin/node');
-    }
+  if (result.success && result.streamUrl) {
+    return {
+      success: true,
+      streamUrl: result.streamUrl,
+      sourceType: 'ytdlp',
+    };
+  }
 
-    // Try best progressive format or HLS stream
-    args.push('-f', 'b/best', trimmed);
+  const isBotBlocked = result.isBotBlocked || false;
+  const userError = isBotBlocked
+    ? 'YouTube BotGuard detected cloud server IP. Solution: 1) Paste the direct HLS (.m3u8) live stream link, 2) Upload your YouTube cookies.txt in DoLive, or 3) Upload the MP4 video directly for 100% reliable 24/7 streaming without bans.'
+    : result.error?.split('\n').filter((l) => l.includes('ERROR:')).join(' ') ||
+      result.error ||
+      'Could not extract playable stream URL.';
 
-    const child = spawn(ytDlpBin, args);
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (d) => {
-      stdout += d.toString();
-    });
-
-    child.stderr.on('data', (d) => {
-      stderr += d.toString();
-    });
-
-    const timeout = setTimeout(() => {
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        // ignore
-      }
-      resolve({
-        success: false,
-        sourceType: 'ytdlp',
-        error: 'Stream link resolution timed out after 25 seconds. YouTube bot protection may be blocking this link.',
-        isBotBlocked: true,
-      });
-    }, 25000);
-
-    child.on('close', (code) => {
-      clearTimeout(timeout);
-      const lines = stdout
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.startsWith('http://') || l.startsWith('https://'));
-
-      if (code === 0 && lines.length > 0) {
-        resolve({
-          success: true,
-          streamUrl: lines[0],
-          sourceType: 'ytdlp',
-        });
-        return;
-      }
-
-      const fullErr = `${stderr} ${stdout}`;
-      const isBotBlocked =
-        fullErr.includes('Sign in to confirm you’re not a bot') ||
-        fullErr.includes('Sign in to confirm that you\'re not a bot') ||
-        fullErr.includes('LOGIN_REQUIRED');
-
-      if (isBotBlocked) {
-        resolve({
-          success: false,
-          sourceType: 'ytdlp',
-          isBotBlocked: true,
-          error:
-            'YouTube BotGuard detected cloud server IP. Solution: 1) Paste the direct HLS (.m3u8) stream link, 2) Upload your YouTube cookies.txt in DoLive, or 3) Upload the MP4 video directly for 100% reliable 24/7 streaming without bans.',
-        });
-      } else {
-        const cleanErr =
-          stderr
-            .split('\n')
-            .filter((l) => l.includes('ERROR:'))
-            .join(' ') ||
-          stderr ||
-          'Could not extract playable stream URL.';
-        resolve({
-          success: false,
-          sourceType: 'ytdlp',
-          error: cleanErr.replace(/ERROR:\s*/g, '').trim(),
-        });
-      }
-    });
-
-    child.on('error', (err) => {
-      clearTimeout(timeout);
-      resolve({
-        success: false,
-        sourceType: 'ytdlp',
-        error: `Failed to execute stream resolver: ${err.message}`,
-      });
-    });
-  });
+  return {
+    success: false,
+    sourceType: 'ytdlp',
+    isBotBlocked,
+    error: userError.replace(/ERROR:\s*/g, '').trim(),
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -676,7 +705,7 @@ app.post('/api/upload', requireAuth, (req: Request, res: Response) => {
 
 // API: Resolve and validate media link via yt-dlp or direct probe
 app.post('/api/stream/resolve', requireAuth, async (req: Request, res: Response) => {
-  const { url } = req.body;
+  const { url, proxyUrl } = req.body;
   if (!url || typeof url !== 'string' || !url.trim()) {
     res.status(400).json({ success: false, message: 'Valid stream URL is required.' });
     return;
@@ -693,7 +722,7 @@ app.post('/api/stream/resolve', requireAuth, async (req: Request, res: Response)
     return;
   }
 
-  const result = await resolveStreamUrl(targetUrl);
+  const result = await resolveStreamUrl(targetUrl, typeof proxyUrl === 'string' ? proxyUrl.trim() : undefined);
   res.json(result);
 });
 
@@ -749,6 +778,7 @@ app.post('/api/stream/start', requireAuth, async (req: Request, res: Response) =
     videoSource,
     videoFilePath,
     videoUrl,
+    proxyUrl,
     rtmpChoice,
     customRtmpUrl,
     streamKey,
@@ -838,7 +868,7 @@ app.post('/api/stream/start', requireAuth, async (req: Request, res: Response) =
     }
 
     addServerLog(`[Stream Resolver 🔍] Resolving playable media stream from: ${inputSource}...`, 'info');
-    const resolution = await resolveStreamUrl(inputSource);
+    const resolution = await resolveStreamUrl(inputSource, typeof proxyUrl === 'string' ? proxyUrl.trim() : undefined);
 
     if (!resolution.success) {
       addServerLog(`[Stream Resolver Error] ${resolution.error}`, 'error');

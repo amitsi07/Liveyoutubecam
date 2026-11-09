@@ -103,6 +103,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   } | null>(null);
 
   const [showCookiesModal, setShowCookiesModal] = useState(false);
+  const [showBotBypassModal, setShowBotBypassModal] = useState(false);
+  const [proxyUrl, setProxyUrl] = useState(() => localStorage.getItem('dolive_proxy_url') || '');
+  const [showProxyInput, setShowProxyInput] = useState(false);
   const [hasServerCookies, setHasServerCookies] = useState(false);
   const [cookiesTextInput, setCookiesTextInput] = useState('');
   const [savingCookies, setSavingCookies] = useState(false);
@@ -129,7 +132,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ url: videoUrl.trim() }),
+        body: JSON.stringify({
+          url: videoUrl.trim(),
+          proxyUrl: proxyUrl.trim() || undefined,
+        }),
       });
       const data = await res.json();
       setIsResolvingUrl(false);
@@ -467,6 +473,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       repeat,
       qualityPreset,
       isDemoMode: isDemo,
+      proxyUrl: proxyUrl.trim() || undefined,
     };
 
     const res = await onStartStream(config);
@@ -607,6 +614,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             }}
           >
             <Cloud size={14} /> Render 24/7 Setup
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowBotBypassModal(true)}
+            style={{
+              background: '#fdf2f8',
+              border: '1px solid #f472b6',
+              color: '#db2777',
+              borderRadius: '6px',
+              padding: '3px 8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '12px',
+              fontWeight: '700',
+            }}
+          >
+            <ShieldCheck size={14} /> 🛡️ YouTube Bot Bypass (Jugaad)
           </button>
 
           <button
@@ -1174,6 +1201,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </button>
                 </div>
 
+                {/* Intelligent YouTube Helper Tip */}
+                {(videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) && (
+                  <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#92400e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <span>
+                      💡 <strong>YouTube Live Tip:</strong> Agar YouTube bot block kar raha hai, toh direct <code>.m3u8</code> HLS link dalein ya MP4 video upload karein.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowBotBypassModal(true)}
+                      style={{ background: '#b45309', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      Bypass Guide (Jugaad)
+                    </button>
+                  </div>
+                )}
+
                 {/* Resolution Status Feedback */}
                 {resolveResult && resolveResult.success && (
                   <div style={{ fontSize: '12px', color: '#059669', background: '#ecfdf5', padding: '8px 10px', borderRadius: '6px', border: '1px solid #a7f3d0', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1195,6 +1238,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <>
                           <div>YouTube bot detection blocked cloud server IP from opening web pages directly.</div>
                           <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => setShowBotBypassModal(true)}
+                              style={{ background: '#be185d', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <ShieldCheck size={13} /> View 4 Bypass Jugaad (100% Fix)
+                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -1234,27 +1284,98 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#6b7280', flexWrap: 'wrap', gap: '6px' }}>
                   <span>
-                    Supports <strong>Direct Streams (.m3u8, .mp4)</strong> and supported platforms via yt-dlp.
+                    Supports <strong>Direct Streams (.m3u8, .mp4)</strong> and web links via yt-dlp.
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowCookiesModal(true)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: hasServerCookies ? '#059669' : '#d97706',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: 0,
-                    }}
-                  >
-                    <Cookie size={13} /> {hasServerCookies ? 'YouTube Cookies (Active ✓)' : 'Bypass with Cookies'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowProxyInput(!showProxyInput)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: proxyUrl ? '#2563eb' : '#6b7280',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: 0,
+                      }}
+                    >
+                      ⚙️ {proxyUrl ? 'Proxy (Configured ✓)' : 'Set Proxy'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCookiesModal(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: hasServerCookies ? '#059669' : '#d97706',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: 0,
+                      }}
+                    >
+                      <Cookie size={13} /> {hasServerCookies ? 'Cookies (Active ✓)' : 'YouTube Cookies'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowBotBypassModal(true)}
+                      style={{
+                        background: '#fdf2f8',
+                        border: '1px solid #fbcfe8',
+                        color: '#db2777',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                      }}
+                    >
+                      🛡️ Bypass Jugaad
+                    </button>
+                  </div>
                 </div>
+
+                {showProxyInput && (
+                  <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                      Residential / SOCKS5 / HTTP Proxy (Bypass Render IP Block):
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="text"
+                        placeholder="http://username:password@proxy-ip:port or socks5://ip:port"
+                        value={proxyUrl}
+                        onChange={(e) => {
+                          setProxyUrl(e.target.value);
+                          localStorage.setItem('dolive_proxy_url', e.target.value);
+                        }}
+                        style={{ fontSize: '12px', padding: '6px 10px', flex: 1 }}
+                      />
+                      {proxyUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProxyUrl('');
+                            localStorage.removeItem('dolive_proxy_url');
+                          }}
+                          style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                      Passes <code>--proxy</code> to yt-dlp so YouTube connects via your residential proxy instead of Render&apos;s datacenter IP.
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1811,6 +1932,131 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {savingCookies ? 'Saving...' : 'Save YouTube Cookies'}
               </button>
               <button type="button" onClick={() => setShowCookiesModal(false)}>
+                {t.closeBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* YouTube Bot Block Bypass Guide & 4 Jugaad Modal */}
+      {showBotBypassModal && (
+        <div className="popup-overlay" onClick={() => setShowBotBypassModal(false)}>
+          <div
+            className="popup-content"
+            style={{ maxWidth: '520px', textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <ShieldCheck size={24} style={{ color: '#db2777' }} />
+              <div>
+                <strong style={{ fontSize: '18px', color: '#111', display: 'block' }}>
+                  YouTube Bot Block Bypass (4 Jugaad)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                  Render Datacenter IP Bot Detection Bypass Guide
+                </span>
+              </div>
+            </div>
+
+            {/* Why does block happen */}
+            <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '8px', padding: '10px', fontSize: '12px', color: '#9f1239', lineHeight: 1.5, marginBottom: '14px' }}>
+              <strong>Block Kyun Hota Hai?</strong><br />
+              Render ke servers cloud datacenter (AWS/Frankfurt) me hote hain. Jab Render YouTube URL scrape karne ki koshish karta hai (yt-dlp), YouTube bot protection (<em>&quot;Sign in to confirm you&apos;re not a bot&quot;</em>) trigger kar deta hai.
+            </div>
+
+            {/* Jugaad 1 */}
+            <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#15803d' }}>
+                  ⭐ Jugaad 1: Direct MP4 Video Upload (100% Working & Safe)
+                </span>
+                <span style={{ fontSize: '10px', background: '#16a34a', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                  BEST METHOD
+                </span>
+              </div>
+              <p style={{ fontSize: '12px', color: '#166534', margin: '4px 0 8px 0', lineHeight: 1.5 }}>
+                YouTube URL daalne ke bajay apni MP4 video direct Render server pe upload kar do. Render seedha FFmpeg se YouTube Live RTMP par stream push karta hai. <strong>YouTube Live RTMP par Render KABHI block nahi hota!</strong> Yeh 24/7 bina kisi ban ke chalta hai.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBotBypassModal(false);
+                  setVideoSource('file');
+                  setTimeout(() => fileInputRef.current?.click(), 100);
+                }}
+                style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Upload size={14} /> Upload Video File Directly Now
+              </button>
+            </div>
+
+            {/* Jugaad 2 */}
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#1d4ed8', marginBottom: '4px' }}>
+                🌐 Jugaad 2: Direct Media Link (.mp4 / .m3u8)
+              </div>
+              <p style={{ fontSize: '12px', color: '#1e40af', margin: '4px 0 8px 0', lineHeight: 1.5 }}>
+                YouTube URL ke bajay direct <code>.mp4</code> ya <code>.m3u8</code> streaming link use karo (Google Drive direct download link, Cloudflare R2, AWS S3, Dropbox direct link, Internet Archive). Direct link me yt-dlp ki zaroorat hi nahi hoti, seedha stream chalu ho jata hai!
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBotBypassModal(false);
+                  const sample = SAMPLE_VIDEOS.find(s => s.name === 'sampleLiveHls') || SAMPLE_VIDEOS[2];
+                  setVideoSource('url');
+                  setVideoUrl(sample.url);
+                  setResolveResult({ success: true, streamUrl: sample.url, sourceType: 'direct' });
+                }}
+                style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Play size={13} /> Try Sample Direct HLS Stream (.m3u8)
+              </button>
+            </div>
+
+            {/* Jugaad 3 */}
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#b45309', marginBottom: '4px' }}>
+                🍪 Jugaad 3: YouTube Cookies (cookies.txt)
+              </div>
+              <p style={{ fontSize: '12px', color: '#92400e', margin: '4px 0 8px 0', lineHeight: 1.5 }}>
+                Apne browser me extension <em>&quot;Get cookies.txt LOCALLY&quot;</em> install karo, YouTube pe kisi bhi account se login karo, cookies export karke DoLive me save kar do. Render ka yt-dlp authenticated cookies bhejega jisse bot detection bypass ho jayega.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBotBypassModal(false);
+                  setShowCookiesModal(true);
+                }}
+                style={{ background: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Cookie size={13} /> Open Cookies Setup
+              </button>
+            </div>
+
+            {/* Jugaad 4 */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', marginBottom: '14px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
+                ⚡ Jugaad 4: Residential / SOCKS5 Proxy
+              </div>
+              <p style={{ fontSize: '12px', color: '#475569', margin: '4px 0 8px 0', lineHeight: 1.5 }}>
+                Video URL ke niche Proxy settings me residential proxy (jaise Webshare, BrightData, ya free proxy) daal do (<code>http://user:pass@ip:port</code>). Render yt-dlp traffic proxy ke residential IP ke through bhejega, jisse YouTube bot block nahi karega.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBotBypassModal(false);
+                  setVideoSource('url');
+                  setShowProxyInput(true);
+                }}
+                style={{ background: '#475569', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                ⚙️ Open Proxy Input
+              </button>
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <button type="button" onClick={() => setShowBotBypassModal(false)}>
                 {t.closeBtn}
               </button>
             </div>

@@ -33,6 +33,7 @@ export interface StreamConfig {
   qualityPreset?: 'fhd' | 'balanced' | 'hd' | 'eco' | 'ultra';
   videoResolution?: string;
   isDemoMode?: boolean;
+  proxyUrl?: string;
 }
 
 export interface StreamLogItem {

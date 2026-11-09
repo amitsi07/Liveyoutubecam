@@ -326,6 +326,7 @@ export function useStreamManager() {
           streamKey: config.streamKey,
           repeat: config.repeat,
           qualityPreset: config.qualityPreset || 'balanced',
+          proxyUrl: config.proxyUrl,
         };
 
         const response = await fetch('/api/stream/start', {
