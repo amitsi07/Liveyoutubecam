@@ -20,6 +20,7 @@ import {
   Cookie,
   Search,
   AlertTriangle,
+  Film,
 } from 'lucide-react';
 import {
   StreamConfig,
@@ -110,12 +111,113 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [cookiesTextInput, setCookiesTextInput] = useState('');
   const [savingCookies, setSavingCookies] = useState(false);
 
+  const [serverVideos, setServerVideos] = useState<Array<{
+    filename: string;
+    filePath: string;
+    fileUrl: string;
+    sizeBytes: number;
+    sizeMb: string;
+    modifiedAt: string;
+    ageHours: string;
+  }>>([]);
+  const [isLoadingVideos, setIsLoadingVideos] = useState(false);
+
+  const fetchServerVideos = async () => {
+    try {
+      setIsLoadingVideos(true);
+      const token = getAuthToken();
+      const res = await fetch('/api/uploads', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.files)) {
+        setServerVideos(data.files);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsLoadingVideos(false);
+    }
+  };
+
+  const handleDeleteServerVideo = async (filename: string) => {
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/uploads/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (videoFilePath.includes(filename)) {
+          setVideoFilePath('');
+          setVideoFileName('');
+        }
+        fetchServerVideos();
+        onShowMessage(lang === 'en' ? `Deleted ${filename} from server storage.` : `Đã xóa ${filename} khỏi bộ nhớ.`);
+      }
+    } catch (err: any) {
+      onShowMessage(`Error: ${err.message}`);
+    }
+  };
+
+  const handleSelectServerVideo = (file: { filename: string; filePath: string; fileUrl: string; sizeMb: string }) => {
+    setVideoSource('file');
+    setVideoFilePath(file.filePath);
+    setVideoFileName(file.filename);
+    setVideoBlobUrl(file.fileUrl);
+    setUploadStatus('success');
+    setUploadProgress(null);
+    setIsUploading(false);
+    onShowMessage(
+      lang === 'en'
+        ? `Selected saved video: ${file.filename} (${file.sizeMb} MB) — Ready to broadcast!`
+        : `Đã chọn video đã lưu: ${file.filename} (${file.sizeMb} MB) — Sẵn sàng phát!`
+    );
+  };
+
+  const [isSavingSample, setIsSavingSample] = useState(false);
+  const handleSaveSampleToServer = async () => {
+    setIsSavingSample(true);
+    try {
+      const res = await fetch('/api/uploads/download-sample', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        await fetchServerVideos();
+        handleSelectServerVideo({
+          filename: data.filename,
+          filePath: data.filePath,
+          fileUrl: data.fileUrl,
+          sizeMb: data.sizeMb,
+        });
+        onShowMessage(
+          lang === 'en'
+            ? 'Test video stored on server! Dropdown is now ready.'
+            : 'Đã lưu video thử nghiệm vào máy chủ! Đã sẵn sàng phát.'
+        );
+      } else {
+        onShowMessage(`Error: ${data.message}`);
+      }
+    } catch (err: any) {
+      onShowMessage(`Error: ${err.message}`);
+    } finally {
+      setIsSavingSample(false);
+    }
+  };
+
   useEffect(() => {
     fetch('/api/youtube/cookies')
       .then((r) => r.json())
       .then((d) => setHasServerCookies(Boolean(d.hasCookies)))
       .catch(() => {});
+    fetchServerVideos();
   }, []);
+
+  useEffect(() => {
+    if (videoSource === 'file') {
+      fetchServerVideos();
+    }
+  }, [videoSource]);
 
   const handleResolveUrl = async () => {
     if (!videoUrl.trim()) {
@@ -349,11 +451,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           setUploadPercent(pct);
           const loadedMb = (evt.loaded / (1024 * 1024)).toFixed(1);
           const totalMb = (evt.total / (1024 * 1024)).toFixed(1);
-          setUploadProgress(
-            lang === 'en'
-              ? `Uploading: ${pct}% (${loadedMb} / ${totalMb} MB)`
-              : `Đang tải: ${pct}% (${loadedMb} / ${totalMb} MB)`
-          );
+          if (pct >= 100) {
+            setUploadProgress(
+              lang === 'en'
+                ? `Uploaded 100% (${loadedMb} MB) — Finalizing & saving on server, please wait...`
+                : `Đã truyền 100% (${loadedMb} MB) — Đang lưu vào bộ nhớ máy chủ...`
+            );
+          } else {
+            setUploadProgress(
+              lang === 'en'
+                ? `Uploading: ${pct}% (${loadedMb} / ${totalMb} MB)`
+                : `Đang tải: ${pct}% (${loadedMb} / ${totalMb} MB)`
+            );
+          }
         }
       };
 
@@ -366,15 +476,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               setVideoFilePath(data.filePath);
               setUploadStatus('success');
               setUploadPercent(100);
+              fetchServerVideos();
               setUploadProgress(
                 lang === 'en'
-                  ? `Uploaded 100% (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
-                  : `Đã tải lên máy chủ 100% (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+                  ? `Saved on Server 100% (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+                  : `Đã lưu trên máy chủ 100% (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
               );
               onShowMessage(
                 lang === 'en'
-                  ? `Video uploaded to server! (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
-                  : `Đã tải video lên máy chủ! (${(file.size / (1024 * 1024)).toFixed(1)} MB)`
+                  ? `Video saved to server storage! (${(file.size / (1024 * 1024)).toFixed(1)} MB) — Ready to stream!`
+                  : `Đã lưu video vào máy chủ! (${(file.size / (1024 * 1024)).toFixed(1)} MB) — Sẵn sàng phát!`
               );
               return;
             }
@@ -1135,6 +1246,112 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <Upload size={16} /> {t.chooseFileBtn}
                   </button>
                 </div>
+
+                {/* Quick Dropdown Picker for Saved Videos (Always visible so user can see it) */}
+                <div
+                  style={{
+                    marginTop: '6px',
+                    padding: '10px',
+                    background: '#ecfdf5',
+                    border: '2px solid #059669',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                    <label
+                      htmlFor="server-videos-select"
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: '700',
+                        color: '#065f46',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        margin: 0,
+                      }}
+                    >
+                      <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#10b981' }}></span>
+                      📂 Select Saved Video from Server:
+                    </label>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        backgroundColor: serverVideos.length > 0 ? '#10b981' : '#d1fae5',
+                        color: serverVideos.length > 0 ? '#ffffff' : '#047857',
+                      }}
+                    >
+                      {serverVideos.length} Saved on Disk
+                    </span>
+                  </div>
+
+                  <select
+                    id="server-videos-select"
+                    value={serverVideos.some((v) => v.filePath === videoFilePath) ? videoFilePath : ''}
+                    onChange={(e) => {
+                      const selected = serverVideos.find((v) => v.filePath === e.target.value);
+                      if (selected) {
+                        handleSelectServerVideo(selected);
+                      }
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      fontSize: '14px',
+                      border: '1.5px solid #059669',
+                      borderRadius: '6px',
+                      backgroundColor: '#ffffff',
+                      color: '#064e3b',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      width: '100%',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                    }}
+                  >
+                    {serverVideos.length > 0 ? (
+                      <>
+                        <option value="">-- 🔽 Click to Choose from {serverVideos.length} Saved Video{serverVideos.length > 1 ? 's' : ''} --</option>
+                        {serverVideos.map((vid) => (
+                          <option key={vid.filename} value={vid.filePath}>
+                            🎬 {vid.filename} ({vid.sizeMb} MB) — Reusable
+                          </option>
+                        ))}
+                      </>
+                    ) : (
+                      <option value="">📂 No saved videos on server yet (Click &quot;Browse Video File&quot; above to upload)</option>
+                    )}
+                  </select>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', color: '#047857' }}>
+                      💡 Pick any video here to stream without re-uploading
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={fetchServerVideos}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#059669',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          padding: 0,
+                          textDecoration: 'underline',
+                        }}
+                      >
+                        🔄 {isLoadingVideos ? 'Refreshing...' : 'Refresh Dropdown'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+
                 {isUploading && (
                   <div style={{ marginTop: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#2563eb', fontWeight: '600', marginBottom: '4px' }}>
@@ -1156,6 +1373,116 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     ⚠️ Upload failed. Try a smaller video (&lt; 100MB) or use a Sample Video below.
                   </span>
                 )}
+
+                {/* Stored Videos on Server (Reusable anytime without re-uploading!) */}
+                <div style={{ background: serverVideos.length > 0 ? '#f0fdf4' : '#f8fafc', border: `1.5px ${serverVideos.length > 0 ? 'solid #86efac' : 'dashed #cbd5e1'}`, borderRadius: '8px', padding: '10px 12px', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: serverVideos.length > 0 ? '8px' : '4px', flexWrap: 'wrap', gap: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: serverVideos.length > 0 ? '#166534' : '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      💾 Saved on Server Storage ({serverVideos.length} video{serverVideos.length !== 1 ? 's' : ''}):
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={handleSaveSampleToServer}
+                        disabled={isSavingSample}
+                        style={{
+                          background: '#10b981',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '3px 8px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          cursor: isSavingSample ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                        title="Download small sample video to server disk for immediate test"
+                      >
+                        <Sparkles size={11} /> {isSavingSample ? 'Saving...' : 'Save Test Video to Server'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={fetchServerVideos}
+                        style={{ background: 'none', border: 'none', color: '#15803d', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                      >
+                        🔄 {isLoadingVideos ? 'Refreshing...' : 'Refresh'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {serverVideos.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                      {serverVideos.map((vid) => {
+                        const isSelected = videoFilePath === vid.filePath || videoFilePath.includes(vid.filename);
+                        return (
+                          <div
+                            key={vid.filename}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              background: isSelected ? '#dcfce7' : '#fff',
+                              border: `1px solid ${isSelected ? '#4ade80' : '#e2e8f0'}`,
+                              borderRadius: '6px',
+                              padding: '6px 10px',
+                              fontSize: '12px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                              <Film size={14} style={{ color: '#16a34a', flexShrink: 0 }} />
+                              <span style={{ fontWeight: isSelected ? 'bold' : '600', color: '#1e293b' }} title={vid.filename}>
+                                {vid.filename}
+                              </span>
+                              <span style={{ color: '#64748b', fontSize: '11px', flexShrink: 0 }}>
+                                ({vid.sizeMb} MB)
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '8px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectServerVideo(vid)}
+                                style={{
+                                  background: isSelected ? '#16a34a' : '#22c55e',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {isSelected ? '✓ In Use' : '⚡ Use This'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteServerVideo(vid.filename)}
+                                style={{
+                                  background: '#fee2e2',
+                                  border: '1px solid #fecaca',
+                                  color: '#dc2626',
+                                  borderRadius: '4px',
+                                  padding: '4px 6px',
+                                  fontSize: '11px',
+                                  cursor: 'pointer',
+                                }}
+                                title="Delete from server storage"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.5, marginTop: '2px' }}>
+                      Server storage is empty right now. Once you upload a video (MP4/MKV) via <strong>&quot;Browse Video File&quot;</strong>, it will appear here and in the green dropdown above so you can select and reuse it with 1-click without uploading again! Or click <strong>&quot;Save Test Video to Server&quot;</strong> to test immediately.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

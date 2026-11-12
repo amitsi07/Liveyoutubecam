@@ -458,17 +458,18 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // Memory map of uploaded files: maps original filename and generated safe name to absolute path
 const uploadedFilesMap = new Map<string, string>();
 
-// Clean up old uploads older than 6 hours
+// Clean up old uploads older than 48 hours (skips cookies.txt)
 function cleanOldUploads(): void {
   try {
     if (!fs.existsSync(UPLOADS_DIR)) return;
     const now = Date.now();
     const files = fs.readdirSync(UPLOADS_DIR);
     for (const f of files) {
+      if (f === 'cookies.txt') continue;
       const full = path.join(UPLOADS_DIR, f);
       try {
         const stat = fs.statSync(full);
-        if (now - stat.mtimeMs > 6 * 60 * 60 * 1000) {
+        if (now - stat.mtimeMs > 48 * 60 * 60 * 1000) {
           fs.unlinkSync(full);
         }
       } catch {
@@ -701,6 +702,69 @@ app.post('/api/upload', requireAuth, (req: Request, res: Response) => {
       res.status(500).json({ success: false, message: err.message });
     }
   });
+});
+
+// API: List stored video files on server
+app.get('/api/uploads', (_req: Request, res: Response) => {
+  try {
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      res.json({ success: true, files: [] });
+      return;
+    }
+    const files = fs.readdirSync(UPLOADS_DIR);
+    const videoFiles = files
+      .filter((f) => {
+        const ext = path.extname(f).toLowerCase();
+        return ['.mp4', '.m4v', '.mkv', '.mov', '.flv', '.ts', '.webm', '.avi'].includes(ext);
+      })
+      .map((f) => {
+        const full = path.join(UPLOADS_DIR, f);
+        const stat = fs.statSync(full);
+        return {
+          filename: f,
+          filePath: full,
+          fileUrl: `/uploads/${f}`,
+          sizeBytes: stat.size,
+          sizeMb: (stat.size / (1024 * 1024)).toFixed(1),
+          modifiedAt: stat.mtime.toISOString(),
+          ageHours: ((Date.now() - stat.mtimeMs) / (1000 * 60 * 60)).toFixed(1),
+        };
+      })
+      .sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+
+    res.json({ success: true, files: videoFiles });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// API: Download a sample video to server storage (for instant testing of server file reuse)
+app.post('/api/uploads/download-sample', async (_req: Request, res: Response) => {
+  try {
+    const sampleUrl = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
+    const filename = 'sample_flower_hd.mp4';
+    const targetFile = path.join(UPLOADS_DIR, filename);
+
+    if (!fs.existsSync(targetFile)) {
+      const resp = await fetch(sampleUrl);
+      if (!resp.ok) throw new Error(`Failed to fetch sample: ${resp.statusText}`);
+      const arrayBuffer = await resp.arrayBuffer();
+      fs.writeFileSync(targetFile, Buffer.from(arrayBuffer));
+      addServerLog(`[Storage] Sample video saved to disk: ${filename} (${(arrayBuffer.byteLength / 1024).toFixed(0)} KB)`, 'success');
+    }
+
+    uploadedFilesMap.set(filename.toLowerCase(), targetFile);
+    res.json({
+      success: true,
+      filename,
+      filePath: targetFile,
+      fileUrl: `/uploads/${filename}`,
+      sizeMb: (fs.statSync(targetFile).size / (1024 * 1024)).toFixed(1),
+      message: 'Sample video stored on server disk!',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // API: Resolve and validate media link via yt-dlp or direct probe
